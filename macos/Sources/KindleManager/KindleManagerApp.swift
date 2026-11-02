@@ -502,6 +502,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppPalette.canvas(paletteScheme))
+        .background(WindowConfigurator())
         .tint(AppPalette.accent(paletteScheme))
         .toolbar {
             ToolbarItem(placement: .principal) {

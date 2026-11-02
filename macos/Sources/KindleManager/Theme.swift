@@ -45,3 +45,68 @@ private extension Color {
         )
     }
 }
+
+struct WindowConfigurator: NSViewRepresentable {
+    final class Coordinator {
+        var monitor: Any?
+
+        deinit {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            configure(view)
+            installDragMonitor(for: view, coordinator: context.coordinator)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { configure(view) }
+    }
+
+    private func configure(_ view: NSView) {
+        guard let window = view.window else { return }
+        window.isMovableByWindowBackground = true
+        window.toolbar?.showsBaselineSeparator = false
+    }
+
+    private func installDragMonitor(for view: NSView, coordinator: Coordinator) {
+        guard coordinator.monitor == nil else { return }
+        coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            guard let window = view.window,
+                  event.window === window,
+                  event.clickCount == 1,
+                  event.locationInWindow.y >= window.contentLayoutRect.maxY,
+                  let hit = window.contentView?.superview?.hitTest(event.locationInWindow),
+                  isDraggableTitleArea(hit)
+            else { return event }
+
+            window.performDrag(with: event)
+            return nil
+        }
+    }
+
+    private func isDraggableTitleArea(_ hit: NSView) -> Bool {
+        var current: NSView? = hit
+        while let view = current {
+            let name = String(describing: type(of: view))
+            if name.contains("ToolbarTitle") || name.contains("Titlebar") {
+                return true
+            }
+            if name.contains("Widget") || name.contains("Button") || name.contains("Segmented")
+                || name.contains("Popup") || name.contains("ToolbarItemViewer") {
+                return false
+            }
+            current = view.superview
+        }
+        return false
+    }
+}
