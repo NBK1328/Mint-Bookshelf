@@ -116,11 +116,17 @@ func KM_LibraryScan(root *C.char) *C.char {
 	if state == nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not initialized"}))
 	}
-	n, err := state.lib.ScanRoot(C.GoString(root))
+	result, err := state.lib.ScanRoot(C.GoString(root))
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	return C.CString(mustJSON(map[string]any{"ok": true, "added": n}))
+	return C.CString(mustJSON(map[string]any{
+		"ok":      true,
+		"scanned": result.Scanned,
+		"added":   result.Added,
+		"updated": result.Updated,
+		"deleted": result.Deleted,
+	}))
 }
 
 //export KM_LibraryGetBooks

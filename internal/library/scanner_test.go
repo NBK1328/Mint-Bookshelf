@@ -23,24 +23,34 @@ func TestScan(t *testing.T) {
 	defer os.Remove(dbf.Name())
 
 	sc := NewScanner(db)
-	n, err := sc.ScanRoot(dir)
+	result, err := sc.ScanRoot(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("expected 2, got %d", n)
+	if result.Scanned != 2 || result.Added != 2 {
+		t.Fatalf("expected scanned=2 added=2, got %+v", result)
 	}
 	books, _ := db.Books()
 	if len(books) != 2 {
 		t.Fatalf("books %d", len(books))
 	}
 	// rescan idempotent
-	n2, _ := sc.ScanRoot(dir)
-	if n2 != 2 {
-		t.Fatalf("rescan added %d", n2)
+	result2, _ := sc.ScanRoot(dir)
+	if result2.Added != 0 || result2.Updated != 2 {
+		t.Fatalf("rescan result %+v", result2)
 	}
 	books2, _ := db.Books()
 	if len(books2) != 2 {
 		t.Fatalf("dup books %d", len(books2))
+	}
+
+	os.Remove(filepath.Join(dir, "a.txt"))
+	result3, _ := sc.ScanRoot(dir)
+	if result3.Deleted != 1 {
+		t.Fatalf("delete result %+v", result3)
+	}
+	books3, _ := db.Books()
+	if len(books3) != 1 {
+		t.Fatalf("books after delete %d", len(books3))
 	}
 }

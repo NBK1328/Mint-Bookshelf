@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -141,7 +142,6 @@ func (d *DB) DeleteBookPath(path string) error {
 }
 
 func (d *DB) Search(q string) ([]Book, error) {
-	// simple
 	all, err := d.Books()
 	if err != nil {
 		return nil, err
@@ -149,15 +149,17 @@ func (d *DB) Search(q string) ([]Book, error) {
 	if q == "" {
 		return all, nil
 	}
+	query := strings.ToLower(q)
 	var out []Book
 	for _, b := range all {
-		if containsFold(b.Title, q) || containsFold(b.Author, q) || containsFold(b.Series, q) {
+		if strings.Contains(strings.ToLower(b.Title), query) ||
+			strings.Contains(strings.ToLower(b.Author), query) ||
+			strings.Contains(strings.ToLower(b.Series), query) {
 			out = append(out, b)
 		}
 	}
 	return out, nil
 }
-
 
 func (d *DB) SetSetting(key, value string) error {
 	_, err := d.sql.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
@@ -173,11 +175,16 @@ func (d *DB) GetSetting(key string) (string, error) {
 	return v, err
 }
 
-
 func (d *DB) UpsertOperation(o *Operation) error {
 	var started, ended *int64
-	if o.StartedAt != nil { v := o.StartedAt.Unix(); started = &v }
-	if o.EndedAt != nil { v := o.EndedAt.Unix(); ended = &v }
+	if o.StartedAt != nil {
+		v := o.StartedAt.Unix()
+		started = &v
+	}
+	if o.EndedAt != nil {
+		v := o.EndedAt.Unix()
+		ended = &v
+	}
 	_, err := d.sql.Exec(`INSERT INTO operations(id,type,status,title,progress,started_at,ended_at,error)
 		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
 		type=excluded.type,status=excluded.status,title=excluded.title,progress=excluded.progress,started_at=excluded.started_at,ended_at=excluded.ended_at,error=excluded.error`,
@@ -193,8 +200,14 @@ func (d *DB) GetOperation(id string) (*Operation, error) {
 		// handle nulls by scanning into sql.NullInt64? simpler: retry with coalesce
 		return nil, err
 	}
-	if sp.Valid { t := time.Unix(sp.Int64, 0); o.StartedAt = &t }
-	if ep.Valid { t := time.Unix(ep.Int64, 0); o.EndedAt = &t }
+	if sp.Valid {
+		t := time.Unix(sp.Int64, 0)
+		o.StartedAt = &t
+	}
+	if ep.Valid {
+		t := time.Unix(ep.Int64, 0)
+		o.EndedAt = &t
+	}
 	return &o, nil
 }
 
@@ -211,8 +224,14 @@ func (d *DB) ListOperations() ([]Operation, error) {
 		if err := rows.Scan(&o.ID, &o.Type, &o.Status, &o.Title, &o.Progress, &sp, &ep, &o.Error); err != nil {
 			return nil, err
 		}
-		if sp.Valid { t := time.Unix(sp.Int64, 0); o.StartedAt = &t }
-		if ep.Valid { t := time.Unix(ep.Int64, 0); o.EndedAt = &t }
+		if sp.Valid {
+			t := time.Unix(sp.Int64, 0)
+			o.StartedAt = &t
+		}
+		if ep.Valid {
+			t := time.Unix(ep.Int64, 0)
+			o.EndedAt = &t
+		}
 		out = append(out, o)
 	}
 	if out == nil {
@@ -238,43 +257,4 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-func containsFold(s, sub string) bool {
-	// naive
-	return len(sub) == 0 || indexFold(s, sub) >= 0
-}
-
-func indexFold(s, sub string) int {
-	// simple case-insensitive
-	ls := len(s)
-	lsub := len(sub)
-	if lsub > ls {
-		return -1
-	}
-	for i := 0; i <= ls-lsub; i++ {
-		if equalFoldASCII(s[i:i+lsub], sub) {
-			return i
-		}
-	}
-	return -1
-}
-
-func equalFoldASCII(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if ca >= 'A' && ca <= 'Z' {
-			ca += 32
-		}
-		if cb >= 'A' && cb <= 'Z' {
-			cb += 32
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
 }

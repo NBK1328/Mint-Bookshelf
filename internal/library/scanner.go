@@ -24,18 +24,37 @@ type Scanner struct {
 
 func NewScanner(db *storage.DB) *Scanner { return &Scanner{DB: db} }
 
-func (s *Scanner) ScanRoot(root string) (int, error) {
+type ScanResult struct {
+	Scanned int `json:"scanned"`
+	Added   int `json:"added"`
+	Updated int `json:"updated"`
+	Deleted int `json:"deleted"`
+}
+
+func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
+	var result ScanResult
+
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		resolved = root
 	}
-	root = resolved
+	root = filepath.Clean(resolved)
 	if err := s.DB.AddRoot(root); err != nil {
-		return 0, err
+		return result, err
 	}
-	added := 0
+
+	existing, err := s.DB.Books()
+	if err != nil {
+		return result, err
+	}
+	byPath := make(map[string]storage.Book, len(existing))
+	for _, book := range existing {
+		byPath[book.Path] = book
+	}
+
+	seen := make(map[string]bool)
 	slog.Info("scan start", "root", root)
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -46,10 +65,15 @@ func (s *Scanner) ScanRoot(root string) (int, error) {
 		if !bookExts[ext] {
 			return nil
 		}
+
+		path = filepath.Clean(path)
+		seen[path] = true
 		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
+		result.Scanned++
+
 		b := &storage.Book{
 			Path:       path,
 			Format:     strings.TrimPrefix(ext, "."),
@@ -59,17 +83,50 @@ func (s *Scanner) ScanRoot(root string) (int, error) {
 		}
 		b.Title = strings.TrimSuffix(filepath.Base(path), ext)
 		b.Fingerprint = fingerprint(path, info.Size(), info.ModTime())
-		// metadata
 		fillMetadata(b)
-	ExtractCovers(b)
+		ExtractCovers(b)
 		if err := s.DB.UpsertBook(b); err != nil {
 			return err
 		}
-		added++
+		if _, ok := byPath[path]; ok {
+			result.Updated++
+		} else {
+			result.Added++
+		}
 		return nil
 	})
-	slog.Info("scan done", "root", root, "added", added, "err", err)
-	return added, err
+	if walkErr != nil {
+		return result, walkErr
+	}
+
+	for _, book := range existing {
+		if !isUnderRoot(book.Path, root) {
+			continue
+		}
+		if seen[filepath.Clean(book.Path)] {
+			continue
+		}
+		if err := s.DB.DeleteBookPath(book.Path); err != nil {
+			return result, err
+		}
+		result.Deleted++
+	}
+
+	slog.Info("scan done", "root", root, "scanned", result.Scanned, "added", result.Added, "updated", result.Updated, "deleted", result.Deleted)
+	return result, nil
+}
+
+func isUnderRoot(path, root string) bool {
+	path = filepath.Clean(path)
+	root = filepath.Clean(root)
+	if path == root {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func fingerprint(path string, size int64, mt time.Time) string {

@@ -22,8 +22,9 @@ func main() {
 	defer db.Close()
 	sc := library.NewScanner(db)
 	if len(os.Args) >= 3 {
-		n, err := sc.ScanRoot(os.Args[2])
-		fmt.Printf("scanned %d books, err=%v\n", n, err)
+		result, err := sc.ScanRoot(os.Args[2])
+		fmt.Printf("scanned %d books, added=%d updated=%d deleted=%d, err=%v\n",
+			result.Scanned, result.Added, result.Updated, result.Deleted, err)
 	}
 	books, _ := db.Books()
 	fmt.Printf("library has %d books\n", len(books))

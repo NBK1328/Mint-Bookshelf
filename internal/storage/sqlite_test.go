@@ -44,3 +44,29 @@ func TestSQLiteRoundTrip(t *testing.T) {
 		t.Fatalf("dup: %d", len(got2))
 	}
 }
+
+func TestSearchUnicode(t *testing.T) {
+	f, _ := os.CreateTemp("", "km-unicode-*.db")
+	f.Close()
+	os.Remove(f.Name())
+	db, err := Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer os.Remove(f.Name())
+
+	book := &Book{Title: "Книга", Author: "Иван", Series: "Серия", Path: "/tmp/kniga.epub", Format: "epub"}
+	if err := db.UpsertBook(book); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"книга", "КНИГА", "иван", "серия"} {
+		got, err := db.Search(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("query %q returned %d books", query, len(got))
+		}
+	}
+}

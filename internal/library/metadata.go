@@ -13,48 +13,48 @@ import (
 	"github.com/kindle-manager/kindle-manager/internal/storage"
 )
 
+var containerPathRE = regexp.MustCompile(`full-path\s*=\s*["']([^"']+)["']`)
+
 func readEPUBMetadata(b *storage.Book) {
 	zr, err := zip.OpenReader(b.Path)
 	if err != nil {
 		return
 	}
 	defer zr.Close()
-	// find container.xml
+
 	var opfPath string
 	for _, f := range zr.File {
-		if f.Name == "META-INF/container.xml" {
-			rc, err := f.Open()
-			if err != nil {
-				return
-			}
-			data, _ := io.ReadAll(rc)
-			rc.Close()
-			re := regexp.MustCompile(`full-path="([^"]+)"`)
-			m := re.FindSubmatch(data)
-			if len(m) > 1 {
-				opfPath = string(m[1])
-			}
+		if f.Name != "META-INF/container.xml" {
+			continue
 		}
+		rc, err := f.Open()
+		if err != nil {
+			return
+		}
+		data, _ := io.ReadAll(rc)
+		rc.Close()
+		if m := containerPathRE.FindSubmatch(data); len(m) > 1 {
+			opfPath = string(m[1])
+		}
+		break
 	}
 	if opfPath == "" {
 		return
 	}
-	for _, f := range zr.File {
-		if f.Name == opfPath {
-			rc, err := f.Open()
-			if err != nil {
-				return
-			}
-			data, _ := io.ReadAll(rc)
-			rc.Close()
-			parseOPF(b, string(data), filepath.Dir(opfPath), zr)
-		}
-	}
-}
 
-type opfMeta struct {
-	Title   string `xml:"title"`
-	Creator string `xml:"creator"`
+	for _, f := range zr.File {
+		if f.Name != opfPath {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return
+		}
+		data, _ := io.ReadAll(rc)
+		rc.Close()
+		parseOPF(b, string(data), filepath.Dir(opfPath))
+		return
+	}
 }
 
 type opfPackage struct {
@@ -73,63 +73,126 @@ type opfPackage struct {
 			Content string `xml:"content,attr"`
 		} `xml:"meta"`
 	} `xml:"metadata"`
+	Manifest struct {
+		Items []struct {
+			ID         string `xml:"id,attr"`
+			Href       string `xml:"href,attr"`
+			MediaType  string `xml:"media-type,attr"`
+			Properties string `xml:"properties,attr"`
+		} `xml:"item"`
+	} `xml:"manifest"`
 }
 
-func parseOPF(b *storage.Book, data string, base string, zr *zip.ReadCloser) {
+func parseOPF(b *storage.Book, data string, base string) {
 	var pkg opfPackage
 	if err := xml.Unmarshal([]byte(data), &pkg); err != nil {
 		return
 	}
 	if len(pkg.Metadata.Title) > 0 {
-		b.Title = pkg.Metadata.Title[0]
+		b.Title = strings.TrimSpace(pkg.Metadata.Title[0])
 	}
 	if len(pkg.Metadata.Creator) > 0 {
-		b.Author = pkg.Metadata.Creator[0]
+		b.Author = strings.TrimSpace(pkg.Metadata.Creator[0])
 	}
 	if len(pkg.Metadata.Description) > 0 {
-		b.Description = pkg.Metadata.Description[0]
+		b.Description = strings.TrimSpace(pkg.Metadata.Description[0])
 	}
 	if len(pkg.Metadata.Language) > 0 {
-		b.Language = pkg.Metadata.Language[0]
+		b.Language = strings.TrimSpace(pkg.Metadata.Language[0])
 	}
 	if len(pkg.Metadata.Publisher) > 0 {
-		b.Publisher = pkg.Metadata.Publisher[0]
+		b.Publisher = strings.TrimSpace(pkg.Metadata.Publisher[0])
 	}
 	for _, id := range pkg.Metadata.Identifier {
-		if strings.EqualFold(id.Scheme, "ISBN") {
-			b.ISBN = strings.TrimSpace(id.Value)
+		value := strings.TrimSpace(id.Value)
+		lower := strings.ToLower(value)
+		switch {
+		case strings.EqualFold(id.Scheme, "ISBN"):
+			b.ISBN = value
+		case strings.HasPrefix(lower, "urn:isbn:"):
+			b.ISBN = strings.TrimSpace(value[len("urn:isbn:"):])
 		}
 	}
-	for _, m := range pkg.Metadata.Meta {
-		switch m.Name {
+	for _, meta := range pkg.Metadata.Meta {
+		switch meta.Name {
 		case "calibre:series":
-			b.Series = m.Content
+			b.Series = strings.TrimSpace(meta.Content)
 		case "calibre:series_index":
-			// parse float
-			var f float64
-			fmt.Sscanf(m.Content, "%f", &f)
-			b.SeriesIndex = f
+			var index float64
+			fmt.Sscanf(meta.Content, "%f", &index)
+			b.SeriesIndex = index
 		}
 	}
-	// cover image
-	re := regexp.MustCompile(`<meta[^>]*name="cover"[^>]*content="([^"]+)"`)
-	m := re.FindStringSubmatch(data)
-	if len(m) > 1 {
-		id := m[1]
-		// find item with id
-		re2 := regexp.MustCompile(`<item[^>]*id="` + regexp.QuoteMeta(id) + `"[^>]*href="([^"]+)"`)
-		m2 := re2.FindStringSubmatch(data)
-		if len(m2) > 1 {
-			href := m2[1]
-			full := href
-			if base != "" && base != "." {
-				full = base + "/" + href
+
+	if href := coverHref(pkg); href != "" {
+		full := href
+		if base != "" && base != "." {
+			full = base + "/" + href
+		}
+		full = strings.TrimPrefix(filepath.Clean(full), "./")
+		b.CoverPath = "zip://" + b.Path + "!" + full
+	}
+}
+
+func coverHref(pkg opfPackage) string {
+	coverID := ""
+	for _, meta := range pkg.Metadata.Meta {
+		if meta.Name == "cover" {
+			coverID = strings.TrimSpace(meta.Content)
+		}
+	}
+
+	for _, item := range pkg.Manifest.Items {
+		if strings.Contains(item.Properties, "cover-image") {
+			return item.Href
+		}
+	}
+	if coverID != "" {
+		for _, item := range pkg.Manifest.Items {
+			if item.ID == coverID {
+				return item.Href
 			}
-			full = filepath.Clean(full)
-			full = strings.TrimPrefix(full, "./")
-			b.CoverPath = "zip://" + b.Path + "!" + full
 		}
 	}
+	for _, item := range pkg.Manifest.Items {
+		if !strings.HasPrefix(strings.ToLower(item.MediaType), "image/") {
+			continue
+		}
+		if strings.Contains(strings.ToLower(item.ID), "cover") ||
+			strings.Contains(strings.ToLower(item.Href), "cover") {
+			return item.Href
+		}
+	}
+	return ""
+}
+
+type fb2Author struct {
+	First  string `xml:"first-name"`
+	Middle string `xml:"middle-name"`
+	Last   string `xml:"last-name"`
+	Nick   string `xml:"nickname"`
+}
+
+type fb2TitleInfo struct {
+	BookTitle string      `xml:"book-title"`
+	Authors   []fb2Author `xml:"author"`
+	Sequence  struct {
+		Name   string `xml:"name,attr"`
+		Number string `xml:"number,attr"`
+	} `xml:"sequence"`
+}
+
+type fb2 struct {
+	Desc struct {
+		TitleInfo   fb2TitleInfo `xml:"title-info"`
+		PublishInfo struct {
+			Publisher string `xml:"publisher"`
+			Year      string `xml:"year"`
+		} `xml:"publish-info"`
+		DocumentInfo struct {
+			ISBN string `xml:"isbn"`
+		} `xml:"document-info"`
+	} `xml:"description"`
 }
 
 func readFB2Metadata(b *storage.Book) {
@@ -137,42 +200,45 @@ func readFB2Metadata(b *storage.Book) {
 	if err != nil {
 		return
 	}
-	type titleInfo struct {
-		BookTitle string `xml:"book-title"`
-		Author    struct {
-			FirstName string `xml:"first-name"`
-			LastName  string `xml:"last-name"`
-		} `xml:"author"`
-		Sequence struct {
-			Name   string `xml:"name,attr"`
-			Number string `xml:"number,attr"`
-		} `xml:"sequence"`
-	}
-	type fb2 struct {
-		Desc struct {
-			TitleInfo titleInfo `xml:"title-info"`
-		} `xml:"description"`
-	}
 	var f fb2
 	if err := xml.Unmarshal(data, &f); err != nil {
 		return
 	}
-	if f.Desc.TitleInfo.BookTitle != "" {
-		b.Title = f.Desc.TitleInfo.BookTitle
+
+	titleInfo := f.Desc.TitleInfo
+	if titleInfo.BookTitle != "" {
+		b.Title = strings.TrimSpace(titleInfo.BookTitle)
 	}
-	author := strings.TrimSpace(f.Desc.TitleInfo.Author.FirstName + " " + f.Desc.TitleInfo.Author.LastName)
-	if author != "" {
-		b.Author = author
+	var authors []string
+	for _, author := range titleInfo.Authors {
+		var parts []string
+		for _, part := range []string{author.First, author.Middle, author.Last} {
+			if part = strings.TrimSpace(part); part != "" {
+				parts = append(parts, part)
+			}
+		}
+		name := strings.Join(parts, " ")
+		if name == "" {
+			name = strings.TrimSpace(author.Nick)
+		}
+		if name != "" {
+			authors = append(authors, name)
+		}
 	}
-	if f.Desc.TitleInfo.Sequence.Name != "" {
-		b.Series = f.Desc.TitleInfo.Sequence.Name
+	if len(authors) > 0 {
+		b.Author = strings.Join(authors, ", ")
 	}
-	if f.Desc.TitleInfo.Sequence.Name != "" {
-		b.Series = f.Desc.TitleInfo.Sequence.Name
+	if titleInfo.Sequence.Name != "" {
+		b.Series = strings.TrimSpace(titleInfo.Sequence.Name)
+		var index float64
+		fmt.Sscanf(titleInfo.Sequence.Number, "%f", &index)
+		b.SeriesIndex = index
 	}
+	b.Publisher = strings.TrimSpace(f.Desc.PublishInfo.Publisher)
+	fmt.Sscanf(f.Desc.PublishInfo.Year, "%d", &b.Year)
+	b.ISBN = strings.TrimSpace(f.Desc.DocumentInfo.ISBN)
 }
 
-// helper for cover extraction later
 func ExtractCoverZip(zipPath, entry string, dest string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -180,20 +246,21 @@ func ExtractCoverZip(zipPath, entry string, dest string) error {
 	}
 	defer zr.Close()
 	for _, f := range zr.File {
-		if f.Name == entry {
-			rc, err := f.Open()
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-			out, err := os.Create(dest)
-			if err != nil {
-				return err
-			}
-			defer out.Close()
-			_, err = io.Copy(out, rc)
+		if f.Name != entry {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
 			return err
 		}
+		defer rc.Close()
+		out, err := os.Create(dest)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+		_, err = io.Copy(out, rc)
+		return err
 	}
 	return fmt.Errorf("entry not found")
 }

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	_ "image/jpeg"
-	_ "image/png"
 )
 
 func Thumbnail(src string, max int) (string, error) {
@@ -34,6 +33,12 @@ func Thumbnail(src string, max int) (string, error) {
 			h = max
 		}
 	}
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
 	outImg := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -42,7 +47,10 @@ func Thumbnail(src string, max int) (string, error) {
 			outImg.Set(x, y, img.At(sx, sy))
 		}
 	}
-	out := filepath.Join(CacheDir(), "thumb_"+filepath.Base(src)+".png")
+	out := filepath.Join(CacheDir(), "thumb_"+cacheKey(src)+".png")
+	if _, err := os.Stat(out); err == nil {
+		return out, nil
+	}
 	of, err := os.Create(out)
 	if err != nil {
 		return "", err

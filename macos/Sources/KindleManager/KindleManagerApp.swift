@@ -99,7 +99,7 @@ class AppStore: ObservableObject {
 
         reloadBooks()
         let added = payload.added ?? 0
-        let message = "Added \(added) book(s)"
+        let message = "Scanned \(payload.scanned ?? added) · added \(added) · updated \(payload.updated ?? 0) · removed \(payload.deleted ?? 0)"
         libraryStatus = message
         return ScanResult(ok: true, added: added, error: nil)
     }
@@ -322,7 +322,10 @@ struct InitPayload: Decodable {
 
 struct ScanPayload: Decodable {
     let ok: Bool
+    let scanned: Int?
     let added: Int?
+    let updated: Int?
+    let deleted: Int?
     let error: String?
 }
 
