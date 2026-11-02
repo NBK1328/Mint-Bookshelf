@@ -559,6 +559,12 @@ struct ContentView: View {
         .toolbarBackground(AppPalette.chrome(paletteScheme), for: .windowToolbar)
         .preferredColorScheme(store.theme.colorScheme)
         .environment(\.appLanguage, store.language)
+        .onReceive(NotificationCenter.default.publisher(for: .dismissAppMenus)) { _ in
+            showLanguageMenu = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            showLanguageMenu = false
+        }
         .alert("Kindle Manager", isPresented: Binding(
             get: { store.lastError != nil },
             set: { if !$0 { store.lastError = nil } }
@@ -788,6 +794,12 @@ struct LibraryView: View {
                 libraryContent
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dismissAppMenus)) { _ in
+            showSortMenu = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            showSortMenu = false
+        }
     }
 
     private var emptyLibrary: some View {
@@ -831,6 +843,13 @@ struct LibraryView: View {
                         .padding(.trailing, 16)
                     }
                 }
+                .overlay {
+                    if showSortMenu {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { showSortMenu = false }
+                    }
+                }
             }
 
             if !store.libraryStatus.isEmpty {
@@ -840,6 +859,8 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showSortMenu = false }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

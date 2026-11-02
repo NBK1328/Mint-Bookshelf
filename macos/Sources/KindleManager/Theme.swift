@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let dismissAppMenus = Notification.Name("KindleManager.dismissAppMenus")
+}
+
 enum AppPalette {
     static func canvas(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(hex: 0x0A1014) : Color(nsColor: .windowBackgroundColor)
@@ -87,8 +91,12 @@ struct WindowConfigurator: NSViewRepresentable {
         coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             guard let window = view.window,
                   event.window === window,
-                  event.clickCount == 1,
-                  event.locationInWindow.y >= window.contentLayoutRect.maxY,
+                  event.locationInWindow.y >= window.contentLayoutRect.maxY
+            else { return event }
+
+            NotificationCenter.default.post(name: .dismissAppMenus, object: nil)
+
+            guard event.clickCount == 1,
                   let hit = window.contentView?.superview?.hitTest(event.locationInWindow),
                   isDraggableTitleArea(hit)
             else { return event }
