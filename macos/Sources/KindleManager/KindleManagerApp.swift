@@ -619,10 +619,6 @@ struct LibraryView: View {
         }
     }
 
-    private func logLibraryState() {
-        let line = "root=\(store.libraryRoot ?? "nil") books=\(store.books.count) filtered=\(filteredBooks.count) header=\(bookCountText) status=\(store.libraryStatus)\n"
-        try? line.write(toFile: "/tmp/km-ui-debug.txt", atomically: true, encoding: .utf8)
-    }
 
     var body: some View {
         Group {
@@ -632,9 +628,6 @@ struct LibraryView: View {
                 libraryContent
             }
         }
-        .onAppear { logLibraryState() }
-        .onChange(of: store.books.count) { _, _ in logLibraryState() }
-        .onChange(of: store.libraryStatus) { _, _ in logLibraryState() }
     }
 
     private var emptyLibrary: some View {
@@ -740,7 +733,7 @@ struct LibraryView: View {
         case .grid:
             ScrollView {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 16)],
+                    columns: [GridItem(.adaptive(minimum: 180, maximum: 180), spacing: 16)],
                     spacing: 20
                 ) {
                     ForEach(filteredBooks) { book in
@@ -761,7 +754,7 @@ struct LibraryView: View {
             List(filteredBooks, selection: $store.selectedBook) { book in
                 HStack(spacing: 10) {
                     BookCover(path: book.coverPath)
-                        .frame(width: 34, height: 46)
+                        .frame(width: 34, height: 51)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(book.title).font(.headline).lineLimit(1)
                         Text(book.author.isEmpty ? store.t("Unknown author") : book.author)
@@ -796,21 +789,21 @@ struct BookCover: View {
     let path: String?
 
     var body: some View {
-        Group {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.secondary.opacity(0.10))
+
             if let path, let image = NSImage(contentsOfFile: path) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.secondary.opacity(0.12))
-                    .overlay {
-                        Image(systemName: "book.closed")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
+                Image(systemName: "book.closed")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
             }
         }
+        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
@@ -823,16 +816,16 @@ struct BookCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             BookCover(path: book.coverPath)
+                .frame(width: 150, height: 225)
                 .frame(maxWidth: .infinity)
-                .frame(height: 170)
 
             Text(book.title)
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
             Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(1, reservesSpace: true)
 
             HStack(spacing: 6) {
                 Text(book.format.uppercased())
@@ -865,7 +858,7 @@ struct BookDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 BookCover(path: book.coverPath)
-                    .frame(width: 170, height: 230)
+                    .frame(width: 170, height: 255)
                     .frame(maxWidth: .infinity)
 
                 Text(book.title)
