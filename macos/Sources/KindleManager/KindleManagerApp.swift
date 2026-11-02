@@ -3,61 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import KindleManagerSupport
 
-final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
-    private var dragMonitor: Any?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowDidBecomeKey(_:)),
-            name: NSWindow.didBecomeKeyNotification,
-            object: nil
-        )
-        Task { @MainActor in
-            NSApp.windows.forEach { self.configure(window: $0) }
-        }
-        dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
-            guard let window = event.window else { return event }
-            let contentRect = window.contentLayoutRect
-            let point = event.locationInWindow
-            guard point.y > contentRect.maxY else { return event }
-
-            let center = window.frame.width / 2
-            if point.x < 76 || abs(point.x - center) < 76 {
-                return event
-            }
-
-            window.perform(NSSelectorFromString("performWindowDragWithEvent:"), with: event)
-            return nil
-        }
-    }
-
-    @MainActor
-    @objc private func windowDidBecomeKey(_ notification: Notification) {
-        configure(window: notification.object as? NSWindow)
-    }
-
-    @MainActor
-    private func configure(window: NSWindow?) {
-        guard let window else { return }
-        window.minSize = .zero
-        window.contentMinSize = .zero
-        window.isMovable = true
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .underPageBackgroundColor
-        window.isOpaque = true
-        window.titlebarSeparatorStyle = .none
-        window.toolbar?.showsBaselineSeparator = false
-        Task { @MainActor in
-            for _ in 0..<8 {
-                try? await Task.sleep(nanoseconds: 150_000_000)
-                window.titlebarSeparatorStyle = .none
-                window.toolbar?.showsBaselineSeparator = false
-                window.backgroundColor = .underPageBackgroundColor
-            }
-        }
-    }
-
+final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         KM_Shutdown()
     }
@@ -488,7 +434,7 @@ func buildDeviceTree(from files: [DeviceFile]) -> [TreeNode] {
     }.map(makeNode)
 }
 
-func deviceFolders(_ files: [DeviceFile]) -> [DeviceFolder] {
+func deviceFolders(_ files: [DeviceFile], rootLabel: String = "Kindle (root)") -> [DeviceFolder] {
     var byID: [UInt32: DeviceFile] = [:]
     for f in files where f.isFolder { byID[f.id] = f }
 
@@ -508,53 +454,8 @@ func deviceFolders(_ files: [DeviceFile]) -> [DeviceFolder] {
         DeviceFolder(id: $0.id, storageID: $0.storageID, label: label(for: $0))
     }
     out.sort { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
-    out.insert(DeviceFolder(id: 0, storageID: 0, label: "Kindle (root)"), at: 0)
+    out.insert(DeviceFolder(id: 0, storageID: 0, label: rootLabel), at: 0)
     return out
-}
-
-struct WindowChrome: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        schedule(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        schedule(nsView)
-    }
-
-    private func schedule(_ view: NSView) {
-        for delay in [0.0, 0.2, 0.6, 1.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                guard let window = view.window else { return }
-                window.titlebarSeparatorStyle = .none
-                window.toolbar?.showsBaselineSeparator = false
-                window.backgroundColor = .underPageBackgroundColor
-                installContentEdge(on: window)
-            }
-        }
-    }
-
-    private func installContentEdge(on window: NSWindow) {
-        guard let frameView = window.contentView?.superview else { return }
-        let identifier = NSUserInterfaceItemIdentifier("KMContentEdge")
-        frameView.subviews
-            .filter { $0.identifier == identifier }
-            .forEach { $0.removeFromSuperview() }
-
-        let contentRect = window.contentLayoutRect
-        let cover = NSView(frame: NSRect(
-            x: 0,
-            y: contentRect.maxY - 3,
-            width: frameView.bounds.width,
-            height: 3
-        ))
-        cover.identifier = identifier
-        cover.autoresizingMask = [.width, .minYMargin]
-        cover.wantsLayer = true
-        cover.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        frameView.addSubview(cover)
-    }
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
@@ -598,8 +499,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
-        .background(WindowChrome())
+        .background(Color(nsColor: .windowBackgroundColor))
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 4) {
@@ -608,12 +508,44 @@ struct ContentView: View {
                     }
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 10) {
+                    Menu {
+                        ForEach(AppLanguage.allCases) { language in
+                            Button {
+                                store.language = language
+                            } label: {
+                                if store.language == language {
+                                    Label(language.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(language.displayName)
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "globe")
+                    }
+                    .help(store.t("Language"))
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    Button {
+                        store.toggleTheme()
+                    } label: {
+                        Image(systemName: store.theme.icon)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(store.t(store.theme == .dark ? "Light theme" : "Dark theme"))
+                }
+            }
         }
+        .preferredColorScheme(store.theme.colorScheme)
+        .environment(\.appLanguage, store.language)
         .alert("Kindle Manager", isPresented: Binding(
             get: { store.lastError != nil },
             set: { if !$0 { store.lastError = nil } }
         )) {
-            Button("OK", role: .cancel) { store.lastError = nil }
+            Button(store.t("OK"), role: .cancel) { store.lastError = nil }
         } message: {
             Text(store.lastError ?? "")
         }
@@ -635,7 +567,7 @@ struct ContentView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(section.title)
+        .help(store.t(section.title))
     }
 }
 
@@ -676,7 +608,7 @@ struct LibraryView: View {
     }
 
     private var folderName: String {
-        guard let root = store.libraryRoot else { return "Library" }
+        guard let root = store.libraryRoot else { return store.t("Library") }
         return URL(fileURLWithPath: root).lastPathComponent
     }
 
@@ -692,11 +624,11 @@ struct LibraryView: View {
 
     private var emptyLibrary: some View {
         ContentUnavailableView {
-            Label("Library", systemImage: "books.vertical")
+            Label(store.t("Library"), systemImage: "books.vertical")
         } description: {
-            Text("Choose a folder with your books to build a library.")
+            Text(store.t("Choose a folder with your books to build a library."))
         } actions: {
-            Button("Choose Folder…") { chooseLibrary() }
+            Button(store.t("Choose Folder…")) { chooseLibrary() }
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -707,15 +639,15 @@ struct LibraryView: View {
             Divider()
 
             if store.libraryScanning {
-                ProgressView("Scanning…")
+                ProgressView(store.t("Scanning…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredBooks.isEmpty {
                 ContentUnavailableView(
-                    search.isEmpty ? "No Books" : "No Matches",
+                    search.isEmpty ? store.t("No Books") : store.t("No Matches"),
                     systemImage: "book.closed",
                     description: Text(search.isEmpty
-                        ? "This folder does not contain supported book files."
-                        : "Try a different search.")
+                        ? store.t("This folder does not contain supported book files.")
+                        : store.t("Try a different search."))
                 )
             } else {
                 HStack(spacing: 0) {
@@ -746,15 +678,15 @@ struct LibraryView: View {
                 Text(folderName)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text("\(store.books.count) book\(store.books.count == 1 ? "" : "s")")
+                Text(store.t("%d book(s)", store.books.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            TextField("Search", text: $search)
+            TextField(store.t("Search books"), text: $search)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 220)
-            Picker("View", selection: $layout) {
+            Picker(store.t("View"), selection: $layout) {
                 ForEach(LibraryLayout.allCases) { value in
                     Image(systemName: value.icon).tag(value)
                 }
@@ -768,12 +700,12 @@ struct LibraryView: View {
                 Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
             }
             .buttonStyle(.borderless)
-            .help(sortAscending ? "Sort Z–A" : "Sort A–Z")
+            .help(store.t(sortAscending ? "Sort Z–A" : "Sort A–Z"))
             Button { chooseLibrary() } label: {
                 Image(systemName: "folder")
             }
             .buttonStyle(.borderless)
-            .help("Choose another folder")
+            .help(store.t("Choose another folder"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -793,7 +725,7 @@ struct LibraryView: View {
                             .onTapGesture { store.selectedBook = book }
                             .contextMenu {
                                 if let path = book.path {
-                                    Button("Show in Finder") {
+                                    Button(store.t("Show in Finder")) {
                                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                                     }
                                 }
@@ -809,7 +741,7 @@ struct LibraryView: View {
                         .frame(width: 34, height: 46)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(book.title).font(.headline).lineLimit(1)
-                        Text(book.author.isEmpty ? "Unknown author" : book.author)
+                        Text(book.author.isEmpty ? store.t("Unknown author") : book.author)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -832,7 +764,7 @@ struct LibraryView: View {
     }
 
     private func chooseLibrary() {
-        guard let url = chooseDirectory(prompt: "Choose Library") else { return }
+        guard let url = chooseDirectory(prompt: store.t("Choose Library")) else { return }
         Task { _ = await store.openLibrary(at: url) }
     }
 }
@@ -863,6 +795,7 @@ struct BookCover: View {
 struct BookCard: View {
     let book: Book
     let selected: Bool
+    @Environment(\.appLanguage) private var language
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -873,7 +806,7 @@ struct BookCard: View {
             Text(book.title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
-            Text(book.author.isEmpty ? "Unknown author" : book.author)
+            Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -903,6 +836,7 @@ struct BookCard: View {
 
 struct BookDetailView: View {
     let book: Book
+    @Environment(\.appLanguage) private var language
 
     var body: some View {
         ScrollView {
@@ -914,7 +848,7 @@ struct BookDetailView: View {
                 Text(book.title)
                     .font(.title3.weight(.semibold))
                     .textSelection(.enabled)
-                Text(book.author.isEmpty ? "Unknown author" : book.author)
+                Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
 
@@ -926,19 +860,19 @@ struct BookDetailView: View {
 
                 Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
                     if let publisher = book.publisher, !publisher.isEmpty {
-                        GridRow { Text("Publisher").foregroundStyle(.secondary); Text(publisher) }
+                        GridRow { Text(L10n.text("Publisher", language)).foregroundStyle(.secondary); Text(publisher) }
                     }
                     if let year = book.year, year > 0 {
-                        GridRow { Text("Year").foregroundStyle(.secondary); Text(String(year)) }
+                        GridRow { Text(L10n.text("Year", language)).foregroundStyle(.secondary); Text(String(year)) }
                     }
-                    if let language = book.language, !language.isEmpty {
-                        GridRow { Text("Language").foregroundStyle(.secondary); Text(language) }
+                    if let bookLanguage = book.language, !bookLanguage.isEmpty {
+                        GridRow { Text(L10n.text("Language of book", language)).foregroundStyle(.secondary); Text(bookLanguage) }
                     }
                     if let isbn = book.isbn, !isbn.isEmpty {
-                        GridRow { Text("ISBN").foregroundStyle(.secondary); Text(isbn).textSelection(.enabled) }
+                        GridRow { Text(L10n.text("ISBN", language)).foregroundStyle(.secondary); Text(isbn).textSelection(.enabled) }
                     }
-                    GridRow { Text("Format").foregroundStyle(.secondary); Text(book.format.uppercased()) }
-                    GridRow { Text("Size").foregroundStyle(.secondary); Text(byteString(book.size)) }
+                    GridRow { Text(L10n.text("Format", language)).foregroundStyle(.secondary); Text(book.format.uppercased()) }
+                    GridRow { Text(L10n.text("Size", language)).foregroundStyle(.secondary); Text(byteString(book.size)) }
                 }
                 .font(.caption)
 
@@ -950,7 +884,7 @@ struct BookDetailView: View {
                 }
 
                 if let path = book.path {
-                    Button("Show in Finder") {
+                    Button(L10n.text("Show in Finder", language)) {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                     }
                     .buttonStyle(.link)
@@ -977,19 +911,19 @@ struct ConvertView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Convert")
+                    Text(store.t("Convert"))
                         .font(.title2.weight(.semibold))
-                    Text("Prepare a book for your Kindle")
+                    Text(store.t("Prepare a book for your Kindle"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                GroupBox("Input") {
+                GroupBox(store.t("Input")) {
                     fileRow(
                         path: store.convertInput,
-                        placeholder: "No file selected"
+                        placeholder: store.t("No file selected")
                     ) {
-                        guard let url = chooseOpenFile(prompt: "Input") else { return }
+                        guard let url = chooseOpenFile(prompt: store.t("Input")) else { return }
                         store.convertInput = url.path
                         if store.convertOutput.isEmpty {
                             store.convertOutput = url
@@ -1001,10 +935,10 @@ struct ConvertView: View {
                     }
                 }
 
-                GroupBox("Output") {
+                GroupBox(store.t("Output")) {
                     fileRow(
                         path: store.convertOutput,
-                        placeholder: "No output selected"
+                        placeholder: store.t("No output selected")
                     ) {
                         let base = store.convertInput.isEmpty
                             ? "book"
@@ -1015,8 +949,8 @@ struct ConvertView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Format").font(.caption).foregroundStyle(.secondary)
-                    Picker("Format", selection: $format) {
+                    Text(store.t("Format")).font(.caption).foregroundStyle(.secondary)
+                    Picker(store.t("Format"), selection: $format) {
                         ForEach(formats, id: \.self) { value in
                             Text(value.uppercased()).tag(value)
                         }
@@ -1026,7 +960,7 @@ struct ConvertView: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button("Convert") { start() }
+                    Button(store.t("Convert")) { start() }
                         .buttonStyle(.borderedProminent)
                         .disabled(busy || store.convertInput.isEmpty || store.convertOutput.isEmpty)
                     if busy {
@@ -1044,13 +978,13 @@ struct ConvertView: View {
 
                 if !convertOperations.isEmpty {
                     Divider()
-                    Text("Activity").font(.headline)
+                    Text(store.t("Activity")).font(.headline)
                     VStack(spacing: 8) {
                         ForEach(convertOperations) { op in
                             HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(op.title).font(.callout).lineLimit(1)
-                                    Text(op.status.capitalized)
+                                    Text(store.t(op.status.capitalized))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -1058,7 +992,7 @@ struct ConvertView: View {
                                 if op.status == "pending" || op.status == "running" {
                                     ProgressView(value: op.progress)
                                         .frame(width: 100)
-                                    Button("Cancel") {
+                                    Button(store.t("Cancel")) {
                                         Task { _ = await store.cancelOperation(op.id) }
                                     }
                                     .buttonStyle(.borderless)
@@ -1093,7 +1027,7 @@ struct ConvertView: View {
                 .lineLimit(1)
                 .foregroundStyle(path.isEmpty ? .secondary : .primary)
             Spacer()
-            Button("Choose…", action: choose)
+            Button(store.t("Choose…"), action: choose)
                 .buttonStyle(.borderless)
         }
         .padding(.vertical, 2)
@@ -1102,14 +1036,14 @@ struct ConvertView: View {
     private func start() {
         let inputURL = URL(fileURLWithPath: store.convertInput)
         guard FileManager.default.fileExists(atPath: inputURL.path) else {
-            store.lastError = "Input file does not exist"
+            store.lastError = store.t("Input file does not exist")
             return
         }
         let outputURL = URL(fileURLWithPath: store.convertOutput)
             .deletingPathExtension()
             .appendingPathExtension(format)
         guard FileManager.default.fileExists(atPath: outputURL.deletingLastPathComponent().path) else {
-            store.lastError = "Output folder does not exist"
+            store.lastError = store.t("Output folder does not exist")
             return
         }
         store.convertOutput = outputURL.path
@@ -1125,7 +1059,7 @@ struct ConvertView: View {
             )
             busy = false
             if isOK(result) {
-                store.convertResult = "Conversion queued"
+                store.convertResult = store.t("Conversion queued")
             } else {
                 store.convertResult = result
                 store.lastError = errorText(result)
@@ -1154,7 +1088,7 @@ struct DevicesView: View {
     @State private var renameText = ""
 
     @State private var showNewFolder = false
-    @State private var newFolderName = "New Folder"
+    @State private var newFolderName = ""
 
     @State private var showDelete = false
     @State private var pendingDelete: [DeviceFile] = []
@@ -1165,15 +1099,19 @@ struct DevicesView: View {
     @State private var localMoveDir: URL?
     @State private var listHovered = false
 
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        store.t(key, arguments)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if store.devices.isEmpty && !store.deviceLoading {
                 ContentUnavailableView {
-                    Label("No Kindle Connected", systemImage: "cable.connector")
+                    Label(t("No Kindle Connected"), systemImage: "cable.connector")
                 } description: {
-                    Text("Connect your Kindle with a USB cable.")
+                    Text(t("Connect your Kindle with a USB cable."))
                 } actions: {
-                    Button("Refresh") { refresh() }
+                    Button(t("Refresh")) { refresh() }
                         .buttonStyle(.borderedProminent)
                 }
             } else {
@@ -1215,7 +1153,7 @@ struct DevicesView: View {
                     }
 
                     if store.deviceLoading {
-                        ProgressView("Loading Kindle…")
+                        ProgressView(t("Loading Kindle…"))
                             .padding()
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                     }
@@ -1232,30 +1170,30 @@ struct DevicesView: View {
                 showPicker = false
             }
         }
-        .alert("New Folder", isPresented: $showNewFolder) {
-            TextField("Name", text: $newFolderName)
-            Button("Create") { createFolder() }
-            Button("Cancel", role: .cancel) {}
+        .alert(t("New Folder"), isPresented: $showNewFolder) {
+            TextField(t("Name"), text: $newFolderName)
+            Button(t("Create")) { createFolder() }
+            Button(t("Cancel"), role: .cancel) {}
         }
-        .alert("Rename", isPresented: $showRename) {
-            TextField("Name", text: $renameText)
-            Button("Rename") { performRename() }
-            Button("Cancel", role: .cancel) {}
+        .alert(t("Rename"), isPresented: $showRename) {
+            TextField(t("Name"), text: $renameText)
+            Button(t("Rename")) { performRename() }
+            Button(t("Cancel"), role: .cancel) {}
         }
-        .alert("Delete from Kindle?", isPresented: $showDelete) {
-            Button("Delete", role: .destructive) { performDelete() }
-            Button("Cancel", role: .cancel) { pendingDelete = [] }
+        .alert(t("Delete from Kindle?"), isPresented: $showDelete) {
+            Button(t("Delete"), role: .destructive) { performDelete() }
+            Button(t("Cancel"), role: .cancel) { pendingDelete = [] }
         } message: {
-            Text("\(pendingDelete.count) item(s) will be permanently deleted from the device.")
+            Text(t("%d item(s) will be permanently deleted from the device.", pendingDelete.count))
         }
-        .alert("Move to Mac?", isPresented: $showMoveToLocal) {
-            Button("Move", role: .destructive) { performMoveToLocal() }
-            Button("Cancel", role: .cancel) {
+        .alert(t("Move to Mac?"), isPresented: $showMoveToLocal) {
+            Button(t("Move"), role: .destructive) { performMoveToLocal() }
+            Button(t("Cancel"), role: .cancel) {
                 pendingLocalMove = []
                 localMoveDir = nil
             }
         } message: {
-            Text("\(pendingLocalMove.count) file(s) will be copied to your Mac and deleted from Kindle.")
+            Text(t("%d file(s) will be copied to your Mac and deleted from Kindle.", pendingLocalMove.count))
         }
         .fileImporter(isPresented: $showUpload, allowedContentTypes: [.data]) { result in
             guard case .success(let url) = result else { return }
@@ -1289,13 +1227,13 @@ struct DevicesView: View {
                     .lineLimit(1)
             }
             if !selection.isEmpty {
-                Text("\(selection.count) selected")
+                Text(t("%d selected", selection.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             if store.devices.count > 1 {
-                Picker("Device", selection: Binding(
+                Picker(t("Device"), selection: Binding(
                     get: { store.selectedDeviceKey ?? "" },
                     set: { store.selectDevice($0) }
                 )) {
@@ -1315,13 +1253,13 @@ struct DevicesView: View {
                     )
                     .frame(width: 100)
                 }
-                Button("Cancel") { store.cancelDeviceTransfer() }
+                Button(t("Cancel")) { store.cancelDeviceTransfer() }
             }
             Button { refresh() } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("Refresh")
+            .help(t("Refresh"))
             .disabled(store.deviceLoading)
         }
         .padding(.horizontal, 16)
@@ -1351,44 +1289,44 @@ struct DevicesView: View {
     private func deviceMenu(ids: Set<UInt32>) -> some View {
         let chosen = store.deviceFiles.filter { ids.contains($0.id) }
         if chosen.isEmpty {
-            Button("New Folder…") { newFolderName = "New Folder"; showNewFolder = true }
-            Button("Upload File…") { showUpload = true }
-            Button(selectedFolder.map { "Paste into \($0.name)" } ?? "Paste") { pasteIntoKindle() }
+            Button(t("New Folder…")) { newFolderName = t("New Folder"); showNewFolder = true }
+            Button(t("Upload File…")) { showUpload = true }
+            Button(selectedFolder.map { t("Paste into %@", $0.name) } ?? t("Paste")) { pasteIntoKindle() }
             Divider()
-            Button("Refresh") { refresh() }
+            Button(t("Refresh")) { refresh() }
         } else {
             if chosen.count == 1, let f = chosen.first {
                 if !f.isFolder {
-                    Button("Open") {
+                    Button(t("Open")) {
                         Task { status = await store.openDeviceFile(f) }
                     }
-                    Button("Download…") { download(f) }
+                    Button(t("Download…")) { download(f) }
                 } else {
-                    Button("New Folder Here…") {
-                        newFolderName = "New Folder"
+                    Button(t("New Folder Here…")) {
+                        newFolderName = t("New Folder")
                         showNewFolder = true
                     }
                 }
-                Button("Rename…") {
+                Button(t("Rename…")) {
                     renameID = f.id
                     renameText = f.name
                     showRename = true
                 }
                 if f.isFolder {
-                    Button("Paste Into \(f.name)") { pasteIntoKindle(into: f) }
+                    Button(t("Paste Into %@", f.name)) { pasteIntoKindle(into: f) }
                 }
                 Divider()
             }
-            Button("Download to Folder…") { downloadToFolder(chosen) }
+            Button(t("Download to Folder…")) { downloadToFolder(chosen) }
             if chosen.contains(where: { !$0.isFolder }) {
-                Button("Move to Local Folder…") {
+                Button(t("Move to Local Folder…")) {
                     beginMoveToLocal(chosen.filter { !$0.isFolder })
                 }
             }
-            Button("Copy To…") { beginTransfer(chosen, copy: true) }
-            Button("Move To…") { beginTransfer(chosen, copy: false) }
+            Button(t("Copy To…")) { beginTransfer(chosen, copy: true) }
+            Button(t("Move To…")) { beginTransfer(chosen, copy: false) }
             Divider()
-            Button("Delete…", role: .destructive) { confirmDelete(chosen) }
+            Button(t("Delete…"), role: .destructive) { confirmDelete(chosen) }
         }
     }
 
@@ -1434,7 +1372,7 @@ struct DevicesView: View {
 
     private func rebuild() {
         tree = buildDeviceTree(from: store.deviceFiles)
-        folders = deviceFolders(store.deviceFiles)
+        folders = deviceFolders(store.deviceFiles, rootLabel: t("Kindle (root)"))
         selection = selection.intersection(Set(store.deviceFiles.map(\.id)))
     }
 
@@ -1444,29 +1382,29 @@ struct DevicesView: View {
 
     private func kindleEmptyEntries() -> [ContextMenuEntry] {
         [
-            .item("New Folder…") {
-                newFolderName = "New Folder"
+            .item(t("New Folder…")) {
+                newFolderName = t("New Folder")
                 showNewFolder = true
             },
-            .item("Upload File…") { showUpload = true },
-            .item(selectedFolder.map { "Paste into \($0.name)" } ?? "Paste") {
+            .item(t("Upload File…")) { showUpload = true },
+            .item(selectedFolder.map { t("Paste into %@", $0.name) } ?? t("Paste")) {
                 pasteIntoKindle()
             },
             .separator,
-            .item("Refresh") { refresh() },
+            .item(t("Refresh")) { refresh() },
         ]
     }
 
     private func pasteIntoKindle(into folder: DeviceFile? = nil) {
         let urls = pasteboardFileURLs().filter { !$0.hasDirectoryPath }
         guard !urls.isEmpty else {
-            status = "Clipboard has no files"
+            status = t("Clipboard has no files")
             return
         }
         let moving = pasteboardIsCut()
         let target: (id: UInt32, storage: UInt32) = folder.map { ($0.id, $0.storageID) } ?? targetFolder
         let count = urls.count
-        status = moving ? "Moving \(count) file(s)…" : "Uploading \(count) file(s)…"
+        status = moving ? t("Moving %d file(s)…", count) : t("Uploading %d file(s)…", count)
         Task {
             let result = await store.uploadDeviceFilesChecked(
                 urls.map(\.path),
@@ -1479,7 +1417,7 @@ struct DevicesView: View {
                 }.value
                 NSPasteboard.general.clearContents()
                 status = trash.errors.isEmpty
-                    ? "Moved \(trash.trashed) file(s) to Kindle"
+                    ? t("Moved %d file(s) to Kindle", trash.trashed)
                     : trash.errors.joined(separator: "; ")
             } else {
                 status = result.message
@@ -1493,8 +1431,8 @@ struct DevicesView: View {
         let directories = items.filter(\.hasDirectoryPath)
         let files = items.filter { !$0.hasDirectoryPath }
         let target = targetFolder
-        let folder = DeviceFolder(id: target.id, storageID: target.storage, label: "Kindle")
-        status = "Uploading \(items.count) item(s)…"
+        let folder = DeviceFolder(id: target.id, storageID: target.storage, label: t("Kindle"))
+        status = t("Uploading %d item(s)…", items.count)
         Task {
             var errors: [String] = []
             for directory in directories {
@@ -1510,7 +1448,7 @@ struct DevicesView: View {
                 if !isOK(result) { errors.append(errorText(result)) }
             }
             status = errors.isEmpty
-                ? "Uploaded \(items.count) item(s)"
+                ? t("Uploaded %d item(s)", items.count)
                 : errors.joined(separator: "; ")
         }
         return true
@@ -1522,21 +1460,21 @@ struct DevicesView: View {
 
     private func downloadToFolder(_ roots: [DeviceFile]) {
         guard !roots.isEmpty else { return }
-        guard let dir = chooseDirectory(prompt: "Download") else { return }
+        guard let dir = chooseDirectory(prompt: t("Download")) else { return }
         let items = DevicesView.flattenFiles(roots, all: store.deviceFiles)
         guard !items.isEmpty else {
-            status = "Nothing to download"
+            status = t("Nothing to download")
             return
         }
         store.beginDeviceTransfer(total: items.count)
-        status = "Downloading \(items.count) file(s)…"
+        status = t("Downloading %d file(s)…", items.count)
         Task {
             defer { store.finishDeviceTransfer() }
             var errors: [String] = []
             var done = 0
             for (index, item) in items.enumerated() {
                 if store.deviceTransferCancelled {
-                    errors.append("Cancelled")
+                    errors.append(t("Cancelled"))
                     break
                 }
                 let relative = item.components.joined(separator: "/")
@@ -1576,17 +1514,17 @@ struct DevicesView: View {
                 store.deviceTransferDone = index + 1
             }
             status = errors.isEmpty
-                ? "Downloaded \(done) file(s) to \(dir.lastPathComponent)"
+                ? t("Downloaded %d file(s) to %@", done, dir.lastPathComponent)
                 : errors.joined(separator: "; ")
         }
     }
 
     private func beginMoveToLocal(_ files: [DeviceFile]) {
         guard !files.isEmpty else {
-            status = "Select file(s) to move"
+            status = t("Select file(s) to move")
             return
         }
-        guard let dir = chooseDirectory(prompt: "Move") else { return }
+        guard let dir = chooseDirectory(prompt: t("Move")) else { return }
         pendingLocalMove = files
         localMoveDir = dir
         showMoveToLocal = true
@@ -1599,14 +1537,14 @@ struct DevicesView: View {
         localMoveDir = nil
         guard let dir, !files.isEmpty else { return }
         store.beginDeviceTransfer(total: files.count)
-        status = "Moving \(files.count) file(s)…"
+        status = t("Moving %d file(s)…", files.count)
         Task {
             defer { store.finishDeviceTransfer() }
             var downloaded: [DeviceFile] = []
             var errors: [String] = []
             for (index, f) in files.enumerated() {
                 if store.deviceTransferCancelled {
-                    errors.append("Cancelled")
+                    errors.append(t("Cancelled"))
                     break
                 }
                 let parent: URL
@@ -1645,7 +1583,7 @@ struct DevicesView: View {
                 if !result.ok { errors.append(result.message) }
             }
             status = errors.isEmpty
-                ? "Moved \(downloaded.count) file(s) to \(dir.lastPathComponent)"
+                ? t("Moved %d file(s) to %@", downloaded.count, dir.lastPathComponent)
                 : errors.joined(separator: "; ")
         }
     }
@@ -1692,7 +1630,7 @@ struct DevicesView: View {
                 let r = await store.downloadDeviceFile(id, to: path)
                 if !isOK(r) { errors.append(r) }
             }
-            status = errors.isEmpty ? "Downloaded \(destinations.count) file(s)" : errors.joined(separator: "; ")
+            status = errors.isEmpty ? t("Downloaded %d file(s)", destinations.count) : errors.joined(separator: "; ")
         }
     }
 
@@ -1700,15 +1638,15 @@ struct DevicesView: View {
         guard !files.isEmpty else { return }
         pickerFiles = files
         pickerCopy = copy
-        pickerTitle = copy ? "Copy \(files.count) item(s) to…" : "Move \(files.count) item(s) to…"
-        folders = deviceFolders(store.deviceFiles)
+        pickerTitle = copy ? t("Copy %d item(s) to…", files.count) : t("Move %d item(s) to…", files.count)
+        folders = deviceFolders(store.deviceFiles, rootLabel: t("Kindle (root)"))
         showPicker = true
     }
 
     private func applyTransfer(to target: DeviceFolder) {
         let folderIDs = Set(pickerFiles.filter(\.isFolder).map(\.id))
         if !folderIDs.isEmpty && isDeviceDescendant(target.id, of: folderIDs) {
-            status = "Cannot move or copy a folder into itself"
+            status = t("Cannot move or copy a folder into itself")
             return
         }
         let ids = pickerFiles.map(\.id)
@@ -1799,6 +1737,7 @@ final class DeviceDragBox: @unchecked Sendable {
 }
 
 struct DeviceFolderPicker: View {
+    @Environment(\.appLanguage) private var language
     let title: String
     let folders: [DeviceFolder]
     var onPick: (DeviceFolder) -> Void
@@ -1823,7 +1762,7 @@ struct DeviceFolderPicker: View {
             .frame(minHeight: 320)
             HStack {
                 Spacer()
-                Button("Cancel", action: onCancel)
+                Button(L10n.text("Cancel", language), action: onCancel)
             }
         }
         .padding()
@@ -1864,17 +1803,21 @@ struct FilesView: View {
     @State private var renameText = ""
     @State private var showRename = false
 
-    @State private var newFolderName = "untitled folder"
+    @State private var newFolderName = ""
     @State private var showNewFolder = false
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        store.t(key, arguments)
+    }
 
     private var favorites: [Place] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
-            Place(name: "Home", icon: "house", url: home, group: "favorites"),
-            Place(name: "Desktop", icon: "menubar.dock.rectangle", url: home.appendingPathComponent("Desktop"), group: "favorites"),
-            Place(name: "Documents", icon: "doc.text", url: home.appendingPathComponent("Documents"), group: "favorites"),
-            Place(name: "Downloads", icon: "arrow.down.circle", url: home.appendingPathComponent("Downloads"), group: "favorites"),
-            Place(name: "Applications", icon: "app", url: URL(fileURLWithPath: "/Applications"), group: "favorites"),
+            Place(name: t("Home"), icon: "house", url: home, group: "favorites"),
+            Place(name: t("Desktop"), icon: "menubar.dock.rectangle", url: home.appendingPathComponent("Desktop"), group: "favorites"),
+            Place(name: t("Documents"), icon: "doc.text", url: home.appendingPathComponent("Documents"), group: "favorites"),
+            Place(name: t("Downloads"), icon: "arrow.down.circle", url: home.appendingPathComponent("Downloads"), group: "favorites"),
+            Place(name: t("Applications"), icon: "app", url: URL(fileURLWithPath: "/Applications"), group: "favorites"),
         ].filter { FileManager.default.fileExists(atPath: $0.url.path) }
     }
 
@@ -1926,9 +1869,9 @@ struct FilesView: View {
         .sheet(isPresented: $showKindlePicker) {
             DeviceFolderPicker(
                 title: pendingUploadMove
-                    ? "Move \(pendingUploadURLs.count) file(s) to…"
-                    : "Upload \(pendingUploadURLs.count) file(s) to…",
-                folders: deviceFolders(store.deviceFiles)
+                    ? t("Move %d file(s) to…", pendingUploadURLs.count)
+                    : t("Upload %d file(s) to…", pendingUploadURLs.count),
+                folders: deviceFolders(store.deviceFiles, rootLabel: t("Kindle (root)"))
             ) { target in
                 applyKindleTarget(target)
             } onCancel: {
@@ -1936,29 +1879,29 @@ struct FilesView: View {
                 pendingUploadURLs = []
             }
         }
-        .alert("Move to Kindle?", isPresented: $showMoveToKindleConfirm) {
-            Button("Move", role: .destructive) {
+        .alert(t("Move to Kindle?"), isPresented: $showMoveToKindleConfirm) {
+            Button(t("Move"), role: .destructive) {
                 if let target = pendingKindleTarget {
                     performUpload(target, move: true)
                 }
             }
-            Button("Cancel", role: .cancel) {
+            Button(t("Cancel"), role: .cancel) {
                 pendingUploadURLs = []
                 pendingKindleTarget = nil
             }
         } message: {
-            Text("The local copy of \(pendingUploadURLs.count) file(s) will be moved to Trash after a successful upload.")
+            Text(t("The local copy of %d file(s) will be moved to Trash after a successful upload.", pendingUploadURLs.count))
         }
     }
 
     private var sidebar: some View {
         List {
-            Section("Favorites") {
+            Section(t("Favorites")) {
                 ForEach(favorites) { place in
                     sidebarRow(place)
                 }
             }
-            Section("Volumes") {
+            Section(t("Volumes")) {
                 ForEach(volumes) { place in
                     sidebarRow(place)
                 }
@@ -1985,13 +1928,13 @@ struct FilesView: View {
         HStack(spacing: 8) {
             Button { goBack() } label: { Image(systemName: "chevron.left") }
                 .disabled(backStack.isEmpty)
-                .help("Back")
+                .help(t("Back"))
             Button { goForward() } label: { Image(systemName: "chevron.right") }
                 .disabled(forwardStack.isEmpty)
-                .help("Forward")
+                .help(t("Forward"))
             Button { goUp() } label: { Image(systemName: "arrow.up") }
                 .disabled(currentURL.path == "/")
-                .help("Parent folder")
+                .help(t("Parent folder"))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
@@ -2007,16 +1950,16 @@ struct FilesView: View {
             }
             Spacer(minLength: 8)
 
-            TextField("Search", text: $search)
+            TextField(t("Search"), text: $search)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 180)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .alert("New Folder", isPresented: $showNewFolder) {
-            TextField("Name", text: $newFolderName)
-            Button("Create") { createFolder() }
-            Button("Cancel", role: .cancel) {}
+        .alert(t("New Folder"), isPresented: $showNewFolder) {
+            TextField(t("Name"), text: $newFolderName)
+            Button(t("Create")) { createFolder() }
+            Button(t("Cancel"), role: .cancel) {}
         }
     }
 
@@ -2060,10 +2003,10 @@ struct FilesView: View {
         } primaryAction: { ids in
             localPrimaryAction(ids)
         }
-        .alert("Rename", isPresented: $showRename) {
-            TextField("Name", text: $renameText)
-            Button("Rename") { performRename() }
-            Button("Cancel", role: .cancel) { renameTarget = nil }
+        .alert(t("Rename"), isPresented: $showRename) {
+            TextField(t("Name"), text: $renameText)
+            Button(t("Rename")) { performRename() }
+            Button(t("Cancel"), role: .cancel) { renameTarget = nil }
         }
         .dropDestination(for: URL.self) { urls, _ in
             let fileURLs = urls.filter { $0.isFileURL }
@@ -2080,11 +2023,11 @@ struct FilesView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
-            Text("\(filtered.count) items")
+            Text(t("%d items", filtered.count))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if !selection.isEmpty {
-                Text("· \(selection.count) selected")
+                Text("· " + t("%d selected", selection.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2105,21 +2048,21 @@ struct FilesView: View {
     private func localMenu(ids: Set<String>) -> some View {
         let chosen = entries.filter { ids.contains($0.path) }
         if chosen.isEmpty {
-            Button("New Folder…") {
-                newFolderName = "untitled folder"
+            Button(t("New Folder…")) {
+                newFolderName = t("untitled folder")
                 showNewFolder = true
             }
-            Button("Upload File…") { showImporter = true }
-            Button("Paste") { paste() }
+            Button(t("Upload File…")) { showImporter = true }
+            Button(t("Paste")) { paste() }
             Divider()
-            Button("Refresh") { reload() }
+            Button(t("Refresh")) { reload() }
         } else {
             let urls = chosen.map(\.url)
             if chosen.count == 1, let entry = chosen.first {
-                Button(entry.isDir ? "Open" : "Open") {
+                Button(t("Open")) {
                     openEntry(entry)
                 }
-                Button("Open in Finder") {
+                Button(t("Open in Finder")) {
                     if entry.isDir {
                         NSWorkspace.shared.open(entry.url)
                     } else {
@@ -2127,33 +2070,33 @@ struct FilesView: View {
                     }
                 }
                 if entry.isDir {
-                    Button("Paste Into \(entry.name)") { paste(into: entry.url) }
+                    Button(t("Paste Into %@", entry.name)) { paste(into: entry.url) }
                 }
                 Divider()
             }
-            Button("Copy") { copySelection(ids) }
-            Button("Cut") { cutSelection(ids) }
-            Button("Paste") { paste() }
+            Button(t("Copy")) { copySelection(ids) }
+            Button(t("Cut")) { cutSelection(ids) }
+            Button(t("Paste")) { paste() }
             Divider()
-            Button("Move to…") { moveTo(urls) }
-            Button("Copy to…") { copyTo(urls) }
+            Button(t("Move to…")) { moveTo(urls) }
+            Button(t("Copy to…")) { copyTo(urls) }
             if chosen.count == 1, let entry = chosen.first {
-                Button("Rename…") { beginRename(entry.url) }
-                Button("Duplicate") { duplicate(urls) }
+                Button(t("Rename…")) { beginRename(entry.url) }
+                Button(t("Duplicate")) { duplicate(urls) }
             }
             Divider()
             if !chosen.isEmpty {
                 let items = chosen.map(\.url)
-                Button("Upload to Kindle…") {
+                Button(t("Upload to Kindle…")) {
                     beginUploadToKindle(items, move: false)
                 }
-                Button("Move to Kindle…") {
+                Button(t("Move to Kindle…")) {
                     beginUploadToKindle(items, move: true)
                 }
             }
-            Button("Copy Path") { copyPath(urls) }
+            Button(t("Copy Path")) { copyPath(urls) }
             Divider()
-            Button("Move to Trash", role: .destructive) { confirmDelete(urls) }
+            Button(t("Move to Trash"), role: .destructive) { confirmDelete(urls) }
         }
     }
 
@@ -2227,7 +2170,7 @@ struct FilesView: View {
         clipboardCut = false
         writeFileURLsToPasteboard(urls, cut: false)
         clipboardChangeCount = NSPasteboard.general.changeCount
-        status = "Copied \(urls.count) item(s)"
+        status = t("Copied %d item(s)", urls.count)
     }
 
     private func cutSelection(_ ids: Set<String>? = nil) {
@@ -2237,7 +2180,7 @@ struct FilesView: View {
         clipboardCut = true
         writeFileURLsToPasteboard(urls, cut: true)
         clipboardChangeCount = NSPasteboard.general.changeCount
-        status = "Cut \(urls.count) item(s)"
+        status = t("Cut %d item(s)", urls.count)
     }
 
     private func selectedURLs(for ids: Set<String>? = nil) -> [URL] {
@@ -2254,7 +2197,7 @@ struct FilesView: View {
         var fromInternal = false
         if sources.isEmpty {
             guard clipboardChangeCount == changeCount else {
-                status = "Clipboard has no files"
+                status = t("Clipboard has no files")
                 return
             }
             sources = clipboard
@@ -2262,7 +2205,7 @@ struct FilesView: View {
             fromInternal = true
         }
         guard !sources.isEmpty else {
-            status = "Clipboard has no files"
+            status = t("Clipboard has no files")
             return
         }
         Task {
@@ -2282,12 +2225,12 @@ struct FilesView: View {
     }
 
     private func moveTo(_ urls: [URL]) {
-        guard let dest = chooseDirectory(prompt: "Move") else { return }
+        guard let dest = chooseDirectory(prompt: t("Move")) else { return }
         Task { _ = await performTransfer(urls, to: dest, copy: false) }
     }
 
     private func copyTo(_ urls: [URL]) {
-        guard let dest = chooseDirectory(prompt: "Copy") else { return }
+        guard let dest = chooseDirectory(prompt: t("Copy")) else { return }
         Task { _ = await performTransfer(urls, to: dest, copy: true) }
     }
 
@@ -2308,7 +2251,7 @@ struct FilesView: View {
 
         reload()
         if result.ok {
-            status = "\(copy ? "Copied" : "Moved") \(result.succeeded) item(s) to \(destDir.lastPathComponent)"
+            status = t(copy ? "Copied %d item(s) to %@" : "Moved %d item(s) to %@", result.succeeded, destDir.lastPathComponent)
         } else {
             status = result.errors.joined(separator: "; ")
         }
@@ -2330,7 +2273,7 @@ struct FilesView: View {
             }.value
             reload()
             status = result.errors.isEmpty
-                ? "Moved \(result.trashed) item(s) to Trash"
+                ? t("Moved %d item(s) to Trash", result.trashed)
                 : result.errors.joined(separator: "; ")
         }
     }
@@ -2349,7 +2292,7 @@ struct FilesView: View {
         let dest = target.deletingLastPathComponent().appendingPathComponent(name)
         do {
             try FileManager.default.moveItem(at: target, to: dest)
-            status = "Renamed to \(name)"
+            status = t("Renamed to %@", name)
         } catch {
             status = error.localizedDescription
         }
@@ -2358,12 +2301,12 @@ struct FilesView: View {
 
     private func createFolder() {
         var name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty { name = "untitled folder" }
+        if name.isEmpty { name = t("untitled folder") }
         do {
             let dest = try FileSafety.createDirectoryUnique(in: currentURL, name: name)
             reload()
             selection = [dest.path]
-            status = "Created \(dest.lastPathComponent)"
+            status = t("Created %@", dest.lastPathComponent)
         } catch {
             status = error.localizedDescription
         }
@@ -2372,31 +2315,31 @@ struct FilesView: View {
     private func copyPath(_ urls: [URL]) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
-        status = "Copied path(s)"
+        status = t("Copied path(s)")
     }
 
     private func localEmptyEntries() -> [ContextMenuEntry] {
         [
-            .item("New Folder…") {
-                newFolderName = "untitled folder"
+            .item(t("New Folder…")) {
+                newFolderName = t("untitled folder")
                 showNewFolder = true
             },
-            .item("Upload File…") { showImporter = true },
-            .item("Paste") { paste() },
+            .item(t("Upload File…")) { showImporter = true },
+            .item(t("Paste")) { paste() },
             .separator,
-            .item("Refresh") { reload() },
+            .item(t("Refresh")) { reload() },
         ]
     }
 
     private func beginUploadToKindle(_ urls: [URL], move: Bool) {
         let items = urls.filter(\.isFileURL)
         guard !items.isEmpty else {
-            status = "Select file(s) or folder(s) to upload"
+            status = t("Select file(s) or folder(s) to upload")
             return
         }
         pendingUploadURLs = items
         pendingUploadMove = move
-        status = move ? "Choose a Kindle folder to move to" : "Choose a Kindle folder to upload to"
+        status = move ? t("Choose a Kindle folder to move to") : t("Choose a Kindle folder to upload to")
         showKindlePicker = true
     }
 
@@ -2420,7 +2363,7 @@ struct FilesView: View {
         let directories = urls.filter(\.hasDirectoryPath)
         let files = urls.filter { !$0.hasDirectoryPath }
         let count = urls.count
-        status = "Uploading \(count) item(s)…"
+        status = t("Uploading %d item(s)…", count)
         Task {
             var errors: [String] = []
 
@@ -2448,11 +2391,11 @@ struct FilesView: View {
                 }.value
                 reload()
                 status = trash.errors.isEmpty
-                    ? "Moved \(trash.trashed) item(s) to Kindle"
+                    ? t("Moved %d item(s) to Kindle", trash.trashed)
                     : trash.errors.joined(separator: "; ")
             } else if errors.isEmpty {
                 reload()
-                status = "Uploaded \(count) item(s) to Kindle"
+                status = t("Uploaded %d item(s) to Kindle", count)
             } else {
                 status = errors.joined(separator: "; ")
             }
@@ -2462,14 +2405,14 @@ struct FilesView: View {
     private func importExternal(_ urls: [URL]) {
         let dest = currentURL
         let count = urls.count
-        status = "Copying \(count) item(s)…"
+        status = t("Copying %d item(s)…", count)
         Task {
             let result = await Task.detached(priority: .userInitiated) {
                 FilesView.copyIntoLocal(urls, destination: dest)
             }.value
             reload()
             status = result.errors.isEmpty
-                ? "Copied \(result.copied) item(s)"
+                ? t("Copied %d item(s)", result.copied)
                 : result.errors.joined(separator: "; ")
         }
     }

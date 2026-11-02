@@ -6,6 +6,16 @@ import KindleManagerSupport
 class AppStore: ObservableObject {
     @Published var books: [Book] = []
     @Published var libraryRoot: String?
+    @Published var language: AppLanguage = AppLanguage(
+        rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? ""
+    ) ?? AppLanguage.preferred {
+        didSet { UserDefaults.standard.set(language.rawValue, forKey: "appLanguage") }
+    }
+    @Published var theme: AppTheme = AppTheme(
+        rawValue: UserDefaults.standard.string(forKey: "appTheme") ?? ""
+    ) ?? .dark {
+        didSet { UserDefaults.standard.set(theme.rawValue, forKey: "appTheme") }
+    }
     @Published var devices: [RawDevice] = []
     @Published var deviceFiles: [DeviceFile] = []
     @Published var section: String = "library"
@@ -42,10 +52,10 @@ class AppStore: ObservableObject {
         if let data = initRaw.data(using: .utf8),
            let payload = try? JSONDecoder().decode(InitPayload.self, from: data) {
             if !payload.ok {
-                lastError = payload.error ?? "Initialization failed"
+                lastError = payload.error ?? t("Initialization failed")
             }
         } else {
-            lastError = "Initialization failed"
+            lastError = t("Initialization failed")
         }
         reloadBooks()
         reloadOperations()
@@ -64,6 +74,14 @@ class AppStore: ObservableObject {
     deinit {
         monitorTask?.cancel()
         progressTask?.cancel()
+    }
+
+    func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.text(key, language, arguments)
+    }
+
+    func toggleTheme() {
+        theme = theme == .dark ? .light : .dark
     }
 
     func reloadBooks() {
@@ -111,7 +129,9 @@ class AppStore: ObservableObject {
             let payload = try decodeEnvelope(raw, as: ScanData.self)
             reloadBooks()
             let added = payload.added ?? 0
-            let message = "Scanned \(payload.scanned ?? added) · added \(added) · updated \(payload.updated ?? 0) · moved \(payload.moved ?? 0) · removed \(payload.deleted ?? 0)"
+            let message = t("Scanned %d · added %d · updated %d · moved %d · removed %d",
+                               payload.scanned ?? added, added, payload.updated ?? 0,
+                               payload.moved ?? 0, payload.deleted ?? 0)
             libraryStatus = message
             return ScanResult(ok: true, added: added, error: nil)
         } catch {
@@ -214,7 +234,7 @@ class AppStore: ObservableObject {
             if let error = loaded.error {
                 devices = []
                 deviceFiles = []
-                deviceStatus = "Discovery failed: \(error)"
+                deviceStatus = t("Discovery failed: %@", error)
                 deviceState = "error"
                 lastError = error
                 deviceLoading = false
@@ -231,35 +251,36 @@ class AppStore: ObservableObject {
 
             guard let device = selected else {
                 deviceFiles = []
-                deviceStatus = "No Kindle connected"
+                deviceStatus = t("No Kindle connected")
                 deviceState = "disconnected"
                 deviceLoading = false
                 refreshInFlight = false
                 return
             }
 
-            deviceStatus = "Opening Kindle…"
+            deviceStatus = t("Opening Kindle…")
             deviceState = "opening"
+            let language = self.language
             let (files, status) = await runOnDeviceQueue {
-                AppStore.openAndListDevice(device)
+                AppStore.openAndListDevice(device, language: language)
             }
             deviceFiles = files
             deviceStatus = status
-            deviceState = status.hasPrefix("Kindle connected") ? "ready" : "error"
+            deviceState = files.isEmpty ? "error" : "ready"
             deviceLoading = false
             refreshInFlight = false
             deviceRevision += 1
         }
     }
 
-    nonisolated private static func openAndListDevice(_ device: RawDevice) -> ([DeviceFile], String) {
+    nonisolated private static func openAndListDevice(_ device: RawDevice, language: AppLanguage) -> ([DeviceFile], String) {
         let info = connectDevice(device)
-        guard isOK(info) else { return ([], "Connect failed: \(info)") }
+        guard isOK(info) else { return ([], L10n.text("Connect failed: %@", language, info)) }
         let (files, error) = loadDeviceFilesResult()
         if let error {
-            return (files, "Kindle connected, listing failed: \(error)")
+            return (files, L10n.text("Kindle connected, listing failed: %@", language, error))
         }
-        return (files, "Kindle connected · \(files.count) objects")
+        return (files, L10n.text("Kindle connected · %d objects", language, files.count))
     }
 
     func reloadDeviceFiles() async {
@@ -267,7 +288,7 @@ class AppStore: ObservableObject {
         deviceFiles = files
         deviceRevision += 1
         if let error {
-            deviceStatus = "Listing failed: \(error)"
+            deviceStatus = t("Listing failed: %@", error)
             lastError = error
         }
     }
@@ -291,7 +312,7 @@ class AppStore: ObservableObject {
         var errors: [String] = []
         for (index, path) in paths.enumerated() {
             if deviceTransferCancelled {
-                return OpResult(ok: false, message: "Transfer cancelled")
+                return OpResult(ok: false, message: t("Transfer cancelled"))
             }
             let response = await runOnDeviceQueue { () -> String in
                 kmString(withCStr(path) { KM_DeviceUploadBook($0, parent, storage) })
@@ -300,14 +321,14 @@ class AppStore: ObservableObject {
                 errors.append("\(path): \(errorText(response))")
             }
             deviceTransferDone = index + 1
-            deviceStatus = "Uploading \(deviceTransferDone)/\(paths.count)…"
+            deviceStatus = t("Uploading %d/%d…", deviceTransferDone, paths.count)
         }
 
         await reloadDeviceFiles()
         let result = OpResult(
             ok: errors.isEmpty,
             message: errors.isEmpty
-                ? "Uploaded \(paths.count) file(s) to Kindle"
+                ? t("Uploaded %d file(s) to Kindle", paths.count)
                 : errors.joined(separator: "; ")
         )
         deviceStatus = result.message
@@ -352,6 +373,7 @@ class AppStore: ObservableObject {
         }.value
 
         let rootName = FileSafety.sanitizeFileName(root.lastPathComponent)
+        let successMessage = t("Uploaded folder %@", root.lastPathComponent)
         let existingFiles = deviceFiles
         let result = await runOnDeviceQueue { () -> OpResult in
             var errors: [String] = []
@@ -425,7 +447,7 @@ class AppStore: ObservableObject {
             }
 
             let message = errors.isEmpty
-                ? "Uploaded folder \(root.lastPathComponent)"
+                ? successMessage
                 : errors.joined(separator: "; ")
             return OpResult(ok: errors.isEmpty, message: message)
         }
@@ -448,7 +470,7 @@ class AppStore: ObservableObject {
         do {
             tmp = try FileSafety.temporaryDownloadURL(for: file.name)
         } catch {
-            let message = "Open failed: \(error.localizedDescription)"
+            let message = t("Open failed: %@", error.localizedDescription)
             deviceStatus = message
             return message
         }
@@ -458,8 +480,8 @@ class AppStore: ObservableObject {
         }
         if isOK(result) {
             NSWorkspace.shared.open(tmp)
-            deviceStatus = "Opened \(file.name)"
-            return "Opened \(file.name)"
+            deviceStatus = t("Opened %@", file.name)
+            return t("Opened %@", file.name)
         }
         deviceStatus = result
         return result
@@ -470,6 +492,7 @@ class AppStore: ObservableObject {
     }
 
     func deleteDeviceObjectsChecked(_ ids: [UInt32]) async -> OpResult {
+        let deletedMessage = t("Deleted %d item(s)", ids.count)
         let result = await runOnDeviceQueue { () -> OpResult in
             var errors: [String] = []
             for id in ids {
@@ -478,7 +501,7 @@ class AppStore: ObservableObject {
             }
             return OpResult(
                 ok: errors.isEmpty,
-                message: errors.isEmpty ? "Deleted \(ids.count) item(s)" : errors.joined(separator: "; ")
+                message: errors.isEmpty ? deletedMessage : errors.joined(separator: "; ")
             )
         }
         await reloadDeviceFiles()
@@ -487,6 +510,7 @@ class AppStore: ObservableObject {
     }
 
     func moveDeviceObjects(_ ids: [UInt32], to folder: DeviceFolder, copy: Bool = false) async -> String {
+        let successMessage = t(copy ? "Copied %d item(s) to %@" : "Moved %d item(s) to %@", ids.count, folder.label)
         let result = await runOnDeviceQueue { () -> String in
             var errors: [String] = []
             for id in ids {
@@ -496,7 +520,7 @@ class AppStore: ObservableObject {
                 if !isOK(r) { errors.append(r) }
             }
             return errors.isEmpty
-                ? "\(copy ? "Copied" : "Moved") \(ids.count) item(s) to \(folder.label)"
+                ? successMessage
                 : errors.joined(separator: "; ")
         }
         await reloadDeviceFiles()

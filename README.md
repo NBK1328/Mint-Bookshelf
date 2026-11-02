@@ -28,6 +28,8 @@ conversion activity is shown inline with progress and cancel.
 - Conversion form with inline activity/progress/cancel
 - Library search/sort, covers and a book details panel
 - Empty-area context menus on both file lists; no redundant action bars
+- Light and dark themes with a top-bar toggle
+- English and Russian UI with a scalable per-language dictionary
 - Freely resizable window with a drag-friendly titlebar
 
 ## Build
