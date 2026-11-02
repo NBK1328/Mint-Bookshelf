@@ -488,6 +488,8 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @ObservedObject var store: AppStore
 
+    private var paletteScheme: ColorScheme { store.theme.colorScheme }
+
     var body: some View {
         Group {
             switch store.section {
@@ -499,7 +501,8 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppPalette.canvas(paletteScheme))
+        .tint(AppPalette.accent(paletteScheme))
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 4) {
@@ -539,6 +542,7 @@ struct ContentView: View {
                 }
             }
         }
+        .toolbarBackground(AppPalette.chrome(paletteScheme), for: .windowToolbar)
         .preferredColorScheme(store.theme.colorScheme)
         .environment(\.appLanguage, store.language)
         .alert("Kindle Manager", isPresented: Binding(
@@ -558,9 +562,12 @@ struct ContentView: View {
             Image(systemName: section.icon)
                 .font(.system(size: 18, weight: .medium))
                 .frame(width: 32, height: 28)
+                .foregroundStyle(store.section == section.rawValue
+                    ? AppPalette.accent(paletteScheme)
+                    : Color.primary.opacity(0.75))
                 .background(
                     store.section == section.rawValue
-                        ? Color.accentColor.opacity(0.10)
+                        ? AppPalette.accent(paletteScheme).opacity(0.14)
                         : Color.clear,
                     in: RoundedRectangle(cornerRadius: 7)
                 )
@@ -666,7 +673,7 @@ struct LibraryView: View {
                             store.selectedBook = nil
                         }
                         .frame(minWidth: 400, idealWidth: 430, maxWidth: 450, maxHeight: .infinity)
-                        .background(Color(nsColor: .controlBackgroundColor))
+                        .background(AppPalette.panel(store.theme.colorScheme))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .padding(.trailing, 16)
                     }
@@ -676,7 +683,7 @@ struct LibraryView: View {
             if !store.libraryStatus.isEmpty {
                 Text(store.libraryStatus)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppPalette.secondaryText(store.theme.colorScheme))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -694,12 +701,19 @@ struct LibraryView: View {
                     .lineLimit(1)
                 Text(bookCountText)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppPalette.secondaryText(store.theme.colorScheme))
             }
             Spacer()
             TextField(store.t("Search books"), text: $search)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .frame(width: 220)
+                .background(AppPalette.card(store.theme.colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppPalette.border(store.theme.colorScheme), lineWidth: 1)
+                }
                 .focused($searchFocused)
                 .onAppear {
                     DispatchQueue.main.async { searchFocused = false }
@@ -793,6 +807,8 @@ struct LibraryView: View {
                 .contentShape(Rectangle())
             }
             .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(AppPalette.canvas(store.theme.colorScheme))
         }
     }
 
@@ -804,12 +820,13 @@ struct LibraryView: View {
 
 struct BookCover: View {
     let path: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.secondary.opacity(0.10))
+                    .fill(AppPalette.card(colorScheme))
 
                 if let path, let image = NSImage(contentsOfFile: path) {
                     Image(nsImage: image)
@@ -833,6 +850,7 @@ struct BookCard: View {
     let book: Book
     let selected: Bool
     @Environment(\.appLanguage) private var language
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -845,28 +863,28 @@ struct BookCard: View {
                 .lineLimit(2, reservesSpace: true)
             Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppPalette.secondaryText(colorScheme))
                 .lineLimit(1, reservesSpace: true)
 
             HStack(spacing: 6) {
                 Text(book.format.uppercased())
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppPalette.accent(colorScheme).opacity(0.9))
                 Spacer()
                 Text(byteString(book.size))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(AppPalette.secondaryText(colorScheme).opacity(0.75))
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(selected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+                .fill(selected ? AppPalette.accent(colorScheme).opacity(0.12) : AppPalette.card(colorScheme))
         )
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
+                .stroke(selected ? AppPalette.accent(colorScheme) : AppPalette.border(colorScheme), lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10))
     }
@@ -876,6 +894,7 @@ struct BookDetailView: View {
     let book: Book
     let onClose: () -> Void
     @Environment(\.appLanguage) private var language
+    @Environment(\.colorScheme) private var colorScheme
 
     private var metadataLine: String {
         var parts = [book.format.uppercased(), byteString(book.size)]
@@ -918,30 +937,30 @@ struct BookDetailView: View {
 
                             Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
                                 .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppPalette.secondaryText(colorScheme))
                                 .textSelection(.enabled)
 
                             if let series = book.series, !series.isEmpty {
                                 Text(series + (book.seriesIndex.map { " #\($0)" } ?? ""))
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(AppPalette.secondaryText(colorScheme))
                             }
 
                             Text(metadataLine)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(AppPalette.accent(colorScheme).opacity(0.85))
 
                             if let publisher = book.publisher, !publisher.isEmpty {
                                 Text("\(L10n.text("Publisher", language)): \(publisher)")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(AppPalette.secondaryText(colorScheme))
                                     .lineLimit(2)
                             }
 
                             if let isbn = book.isbn, !isbn.isEmpty {
                                 Text("ISBN: \(isbn)")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(AppPalette.secondaryText(colorScheme))
                                     .textSelection(.enabled)
                             }
 
@@ -1199,7 +1218,7 @@ struct DevicesView: View {
                     List(tree, children: \.children, selection: $selection) { node in
                         HStack(spacing: 8) {
                             Image(systemName: node.isFolder ? "folder.fill" : "doc")
-                                .foregroundStyle(node.isFolder ? Color.accentColor : .secondary)
+                                .foregroundStyle(node.isFolder ? AppPalette.accent(store.theme.colorScheme) : AppPalette.secondaryText(store.theme.colorScheme))
                                 .frame(width: 18)
                             Text(node.name).lineLimit(1)
                             Spacer()
@@ -1207,7 +1226,7 @@ struct DevicesView: View {
                                 Text(byteString(Int64(node.size)))
                                     .font(.caption)
                                     .monospacedDigit()
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(AppPalette.secondaryText(store.theme.colorScheme))
                             }
                         }
                         .padding(.vertical, 2)
@@ -1219,6 +1238,8 @@ struct DevicesView: View {
                         }
                     }
                     .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .background(AppPalette.canvas(store.theme.colorScheme))
                     .onHover { listHovered = $0 }
                     .background(EmptyAreaContextMenu(isActive: listHovered, entries: kindleEmptyEntries))
                     .dropDestination(for: URL.self) { urls, _ in
@@ -1986,7 +2007,8 @@ struct FilesView: View {
             }
         }
         .listStyle(.inset)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .scrollContentBackground(.hidden)
+        .background(AppPalette.canvas(store.theme.colorScheme))
     }
 
     private func sidebarRow(_ place: Place) -> some View {
@@ -2046,7 +2068,7 @@ struct FilesView: View {
             ForEach(filtered) { entry in
                 HStack(spacing: 8) {
                     Image(systemName: icon(for: entry))
-                        .foregroundStyle(entry.isDir ? Color.accentColor : .secondary)
+                        .foregroundStyle(entry.isDir ? AppPalette.accent(store.theme.colorScheme) : AppPalette.secondaryText(store.theme.colorScheme))
                         .frame(width: 18)
                     Text(entry.name).lineLimit(1)
                     Spacer()
@@ -2054,7 +2076,7 @@ struct FilesView: View {
                         Text(byteString(entry.size))
                             .font(.caption)
                             .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(AppPalette.secondaryText(store.theme.colorScheme))
                             .frame(width: 80, alignment: .trailing)
                     }
                     if let modified = entry.modified {
@@ -2074,6 +2096,8 @@ struct FilesView: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(AppPalette.canvas(store.theme.colorScheme))
         .onHover { listHovered = $0 }
         .background(EmptyAreaContextMenu(isActive: listHovered, entries: localEmptyEntries))
         .contextMenu(forSelectionType: String.self) { ids in
