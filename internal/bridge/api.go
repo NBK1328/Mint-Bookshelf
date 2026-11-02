@@ -46,7 +46,7 @@ var deviceMu sync.Mutex
 //export KM_Initialize
 func KM_Initialize(dbPath *C.char) *C.char {
 	if state != nil {
-		shutdown()
+		shutdown(true)
 	}
 	p := C.GoString(dbPath)
 	home, _ := os.UserHomeDir()
@@ -64,7 +64,7 @@ func KM_Initialize(dbPath *C.char) *C.char {
 	}
 	db, err := storage.Open(p)
 	if err != nil {
-		shutdown()
+		shutdown(true)
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
 	cal, _ := converter.DetectCalibre()
@@ -76,10 +76,10 @@ func KM_Initialize(dbPath *C.char) *C.char {
 
 //export KM_Shutdown
 func KM_Shutdown() {
-	shutdown()
+	shutdown(false)
 }
 
-func shutdown() {
+func shutdown(closeDevice bool) {
 	allDone := true
 	if state != nil {
 		if state.ops != nil {
@@ -93,7 +93,9 @@ func shutdown() {
 	saveDeviceFolders()
 	progressDevice.Store(nil)
 	if currentDevice != nil {
-		currentDevice.Close()
+		if closeDevice {
+			currentDevice.Close()
+		}
 		currentDevice = nil
 	}
 	currentBus, currentDev = 0, 0

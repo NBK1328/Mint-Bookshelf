@@ -5,6 +5,7 @@ import KindleManagerSupport
 @MainActor
 class AppStore: ObservableObject {
     @Published var books: [Book] = []
+    @Published var libraryRoot: String?
     @Published var devices: [RawDevice] = []
     @Published var deviceFiles: [DeviceFile] = []
     @Published var section: String = "library"
@@ -55,15 +56,6 @@ class AppStore: ObservableObject {
                 guard let self else { return }
                 if self.devices.isEmpty {
                     self.refreshDevice()
-                    continue
-                }
-                let connected = await self.runOnDeviceQueue { KM_DeviceIsConnected() != 0 }
-                if !connected {
-                    self.devices = []
-                    self.deviceFiles = []
-                    self.selectedDeviceKey = nil
-                    self.deviceState = "disconnected"
-                    self.deviceStatus = "Kindle disconnected"
                 }
             }
         }
@@ -75,11 +67,25 @@ class AppStore: ObservableObject {
     }
 
     func reloadBooks() {
+        guard let root = libraryRoot else {
+            books = []
+            return
+        }
         do {
-            books = try loadBooks()
+            books = try loadBooks().filter { book in
+                guard let path = book.path else { return false }
+                return pathIsUnderRoot(path, root: root)
+            }
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func openLibrary(at url: URL) async -> ScanResult {
+        let root = url.resolvingSymlinksInPath().standardizedFileURL.path
+        libraryRoot = root
+        selectedBook = nil
+        return await scanLibrary(root)
     }
 
     func reloadOperations(silent: Bool = false) {
@@ -105,7 +111,7 @@ class AppStore: ObservableObject {
             let payload = try decodeEnvelope(raw, as: ScanData.self)
             reloadBooks()
             let added = payload.added ?? 0
-            let message = "Scanned \(payload.scanned ?? added) · added \(added) · updated \(payload.updated ?? 0) · removed \(payload.deleted ?? 0)"
+            let message = "Scanned \(payload.scanned ?? added) · added \(added) · updated \(payload.updated ?? 0) · moved \(payload.moved ?? 0) · removed \(payload.deleted ?? 0)"
             libraryStatus = message
             return ScanResult(ok: true, added: added, error: nil)
         } catch {
@@ -515,4 +521,12 @@ class AppStore: ObservableObject {
         deviceStatus = result
         return result
     }
+}
+
+private func pathIsUnderRoot(_ path: String, root: String) -> Bool {
+    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    let standardizedRoot = URL(fileURLWithPath: root).standardizedFileURL.path
+    if standardizedPath == standardizedRoot { return false }
+    let prefix = standardizedRoot.hasSuffix("/") ? standardizedRoot : standardizedRoot + "/"
+    return standardizedPath.hasPrefix(prefix)
 }

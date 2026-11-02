@@ -7,7 +7,7 @@ Status: working prototype. Verified on a physical Kindle Scribe (MTP, one
 storage). The app browses the device tree, uploads/downloads files, creates
 folders, moves/copies objects, renames files and deletes from the device with
 confirmation. MTP transfers expose byte-level progress and cancellation, and
-conversion runs through a live operation queue.
+conversion activity is shown inline with progress and cancel.
 
 ## Architecture
 
@@ -18,17 +18,17 @@ conversion runs through a live operation queue.
 
 ## Features
 
+- Minimal top icon bar: Library, Kindle, Files, Convert
+- Library flow: choose a book folder, then browse a minimal list or cover grid
 - Kindle section with reconstructed folder tree and device selector
-- Upload files or whole folders (drag & drop, picker, clipboard)
-- Download, download-to-folder, move-to-Mac and drag-out with on-demand download
-- Copy/move objects inside the device, recursive folder delete with confirmation
-- Local Finder-style browser with background listing, navigation, search and filters
+- File and folder upload/download, move, copy, rename and delete through context menus
 - Finder-compatible copy/cut/paste, drag-in and drag-out
-- Live operation queue with progress and cancel
+- Local Finder-style browser with background listing, breadcrumbs and search
 - Byte-level MTP transfer progress with cancellation
-- Conversion form with file pickers, format selection and queue hand-off
+- Conversion form with inline activity/progress/cancel
 - Library search/sort, covers and a book details panel
-- Empty-area context menus on both file lists
+- Empty-area context menus on both file lists; no redundant action bars
+- Freely resizable window with a drag-friendly titlebar
 
 ## Build
 

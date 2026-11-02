@@ -3,7 +3,61 @@ import SwiftUI
 import UniformTypeIdentifiers
 import KindleManagerSupport
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
+    private var dragMonitor: Any?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+        Task { @MainActor in
+            NSApp.windows.forEach { self.configure(window: $0) }
+        }
+        dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            guard let window = event.window else { return event }
+            let contentRect = window.contentLayoutRect
+            let point = event.locationInWindow
+            guard point.y > contentRect.maxY else { return event }
+
+            let center = window.frame.width / 2
+            if point.x < 76 || abs(point.x - center) < 76 {
+                return event
+            }
+
+            window.perform(NSSelectorFromString("performWindowDragWithEvent:"), with: event)
+            return nil
+        }
+    }
+
+    @MainActor
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        configure(window: notification.object as? NSWindow)
+    }
+
+    @MainActor
+    private func configure(window: NSWindow?) {
+        guard let window else { return }
+        window.minSize = .zero
+        window.contentMinSize = .zero
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .underPageBackgroundColor
+        window.isOpaque = true
+        window.titlebarSeparatorStyle = .none
+        window.toolbar?.showsBaselineSeparator = false
+        Task { @MainActor in
+            for _ in 0..<8 {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                window.titlebarSeparatorStyle = .none
+                window.toolbar?.showsBaselineSeparator = false
+                window.backgroundColor = .underPageBackgroundColor
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         KM_Shutdown()
     }
@@ -14,10 +68,10 @@ struct KindleManagerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = AppStore()
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Kindle Manager") {
             ContentView(store: store)
-                .frame(minWidth: 960, minHeight: 600)
         }
+        .windowToolbarStyle(.unifiedCompact)
     }
 }
 
@@ -290,11 +344,6 @@ func connectDevice(_ d: RawDevice) -> String {
     kmString(KM_DeviceGetInfo(Int32(d.bus), Int32(d.devNum)))
 }
 
-let bookExtensions: Set<String> = [
-    "epub", "mobi", "azw", "azw3", "pdf", "fb2", "txt", "djvu",
-    "cbz", "cbr", "kepub", "doc", "docx", "rtf", "html", "htm", "lit", "pdb"
-]
-
 func icon(for entry: LocalEntry) -> String {
     if entry.isDir { return "folder.fill" }
     switch entry.url.pathExtension.lowercased() {
@@ -463,25 +512,101 @@ func deviceFolders(_ files: [DeviceFile]) -> [DeviceFolder] {
     return out
 }
 
+struct WindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        schedule(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        schedule(nsView)
+    }
+
+    private func schedule(_ view: NSView) {
+        for delay in [0.0, 0.2, 0.6, 1.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let window = view.window else { return }
+                window.titlebarSeparatorStyle = .none
+                window.toolbar?.showsBaselineSeparator = false
+                window.backgroundColor = .underPageBackgroundColor
+                installContentEdge(on: window)
+            }
+        }
+    }
+
+    private func installContentEdge(on window: NSWindow) {
+        guard let frameView = window.contentView?.superview else { return }
+        let identifier = NSUserInterfaceItemIdentifier("KMContentEdge")
+        frameView.subviews
+            .filter { $0.identifier == identifier }
+            .forEach { $0.removeFromSuperview() }
+
+        let contentRect = window.contentLayoutRect
+        let cover = NSView(frame: NSRect(
+            x: 0,
+            y: contentRect.maxY - 3,
+            width: frameView.bounds.width,
+            height: 3
+        ))
+        cover.identifier = identifier
+        cover.autoresizingMask = [.width, .minYMargin]
+        cover.wantsLayer = true
+        cover.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        frameView.addSubview(cover)
+    }
+}
+
+enum AppSection: String, CaseIterable, Identifiable {
+    case library
+    case devices
+    case files
+    case convert
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .library: return "Library"
+        case .devices: return "Kindle"
+        case .files: return "Files"
+        case .convert: return "Convert"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .library: return "books.vertical"
+        case .devices: return "cable.connector"
+        case .files: return "folder"
+        case .convert: return "arrow.2.circlepath"
+        }
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var store: AppStore
+
     var body: some View {
-        NavigationSplitView {
-            List(selection: $store.section) {
-                Label("Library", systemImage: "books.vertical").tag("library")
-                Label("Kindle", systemImage: "cable.connector").tag("devices")
-                Label("Files", systemImage: "folder").tag("files")
-                Label("Convert", systemImage: "arrow.2.circlepath").tag("convert")
-                Label("Queue", systemImage: "list.bullet").tag("queue")
-            }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
-        } detail: {
+        Group {
             switch store.section {
             case "library": LibraryView(store: store)
             case "devices": DevicesView(store: store)
             case "convert": ConvertView(store: store)
             case "files": FilesView(store: store)
-            default: QueueView(store: store)
+            default: LibraryView(store: store)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
+        .background(WindowChrome())
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 4) {
+                    ForEach(AppSection.allCases) { section in
+                        sectionButton(section)
+                    }
+                }
             }
         }
         .alert("Kindle Manager", isPresented: Binding(
@@ -493,11 +618,45 @@ struct ContentView: View {
             Text(store.lastError ?? "")
         }
     }
+
+    private func sectionButton(_ section: AppSection) -> some View {
+        Button {
+            store.section = section.rawValue
+        } label: {
+            Image(systemName: section.icon)
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 32, height: 28)
+                .background(
+                    store.section == section.rawValue
+                        ? Color.accentColor.opacity(0.10)
+                        : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 7)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(section.title)
+    }
+}
+
+enum LibraryLayout: String, CaseIterable, Identifiable {
+    case grid
+    case list
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .grid: return "square.grid.2x2"
+        case .list: return "list.bullet"
+        }
+    }
 }
 
 struct LibraryView: View {
     @ObservedObject var store: AppStore
     @State private var search = ""
+    @State private var layout: LibraryLayout = .grid
     @State private var sortAscending = true
 
     private var filteredBooks: [Book] {
@@ -507,7 +666,7 @@ struct LibraryView: View {
             list = list.filter {
                 $0.title.localizedCaseInsensitiveContains(query)
                     || $0.author.localizedCaseInsensitiveContains(query)
-                    || $0.format.localizedCaseInsensitiveContains(query)
+                    || ($0.series ?? "").localizedCaseInsensitiveContains(query)
             }
         }
         return list.sorted {
@@ -516,38 +675,56 @@ struct LibraryView: View {
         }
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                List(filteredBooks, selection: $store.selectedBook) { book in
-                    HStack(spacing: 8) {
-                        BookThumbnail(path: book.coverPath)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(book.title).font(.headline).lineLimit(1)
-                            Text("\(book.author.isEmpty ? "Unknown author" : book.author) · \(book.format.uppercased())")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        if let p = book.path {
-                            Button {
-                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
-                            } label: {
-                                Image(systemName: "folder")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Reveal in Finder")
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                .searchable(text: $search, prompt: "Search books")
+    private var folderName: String {
+        guard let root = store.libraryRoot else { return "Library" }
+        return URL(fileURLWithPath: root).lastPathComponent
+    }
 
-                if let selected = store.selectedBook {
-                    Divider()
-                    BookDetailView(book: selected)
-                        .frame(width: 300)
+    var body: some View {
+        Group {
+            if store.libraryRoot == nil {
+                emptyLibrary
+            } else {
+                libraryContent
+            }
+        }
+    }
+
+    private var emptyLibrary: some View {
+        ContentUnavailableView {
+            Label("Library", systemImage: "books.vertical")
+        } description: {
+            Text("Choose a folder with your books to build a library.")
+        } actions: {
+            Button("Choose Folder…") { chooseLibrary() }
+                .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var libraryContent: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+
+            if store.libraryScanning {
+                ProgressView("Scanning…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredBooks.isEmpty {
+                ContentUnavailableView(
+                    search.isEmpty ? "No Books" : "No Matches",
+                    systemImage: "book.closed",
+                    description: Text(search.isEmpty
+                        ? "This folder does not contain supported book files."
+                        : "Try a different search.")
+                )
+            } else {
+                HStack(spacing: 0) {
+                    content
+                    if let book = store.selectedBook {
+                        Divider()
+                        BookDetailView(book: book)
+                            .frame(minWidth: 0, idealWidth: 300, maxWidth: 320)
+                    }
                 }
             }
 
@@ -557,39 +734,170 @@ struct LibraryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
             }
         }
-        .toolbar {
-            Button("Add Folder…") {
-                guard let url = chooseDirectory(prompt: "Scan") else { return }
-                Task { _ = await store.scanLibrary(url.path) }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(folderName)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(store.books.count) book\(store.books.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .disabled(store.libraryScanning)
-            Button(sortAscending ? "Sort A–Z" : "Sort Z–A") {
+            Spacer()
+            TextField("Search", text: $search)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 220)
+            Picker("View", selection: $layout) {
+                ForEach(LibraryLayout.allCases) { value in
+                    Image(systemName: value.icon).tag(value)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 88)
+            Button {
                 sortAscending.toggle()
+            } label: {
+                Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
             }
-            Button("Reload") { store.reloadBooks() }
+            .buttonStyle(.borderless)
+            .help(sortAscending ? "Sort Z–A" : "Sort A–Z")
+            Button { chooseLibrary() } label: {
+                Image(systemName: "folder")
+            }
+            .buttonStyle(.borderless)
+            .help("Choose another folder")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch layout {
+        case .grid:
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 16)],
+                    spacing: 20
+                ) {
+                    ForEach(filteredBooks) { book in
+                        BookCard(book: book, selected: store.selectedBook?.id == book.id)
+                            .onTapGesture { store.selectedBook = book }
+                            .contextMenu {
+                                if let path = book.path {
+                                    Button("Show in Finder") {
+                                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                                    }
+                                }
+                            }
+                    }
+                }
+                .padding(20)
+            }
+        case .list:
+            List(filteredBooks, selection: $store.selectedBook) { book in
+                HStack(spacing: 10) {
+                    BookCover(path: book.coverPath)
+                        .frame(width: 34, height: 46)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(book.title).font(.headline).lineLimit(1)
+                        Text(book.author.isEmpty ? "Unknown author" : book.author)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text(book.format.uppercased())
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(byteString(book.size))
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 70, alignment: .trailing)
+                }
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+            }
+            .listStyle(.inset)
+        }
+    }
+
+    private func chooseLibrary() {
+        guard let url = chooseDirectory(prompt: "Choose Library") else { return }
+        Task { _ = await store.openLibrary(at: url) }
     }
 }
 
-struct BookThumbnail: View {
+struct BookCover: View {
     let path: String?
 
     var body: some View {
-        if let path, let image = NSImage(contentsOfFile: path) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 32, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-        } else {
-            Image(systemName: "book.closed.fill")
-                .foregroundStyle(.secondary)
-                .frame(width: 32, height: 44)
+        Group {
+            if let path, let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.12))
+                    .overlay {
+                        Image(systemName: "book.closed")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+            }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+struct BookCard: View {
+    let book: Book
+    let selected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            BookCover(path: book.coverPath)
+                .frame(maxWidth: .infinity)
+                .frame(height: 170)
+
+            Text(book.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            Text(book.author.isEmpty ? "Unknown author" : book.author)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            HStack(spacing: 6) {
+                Text(book.format.uppercased())
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(byteString(book.size))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(selected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -598,13 +906,14 @@ struct BookDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                BookThumbnail(path: book.coverPath)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .scaleEffect(2.2)
-                    .frame(height: 120)
+            VStack(alignment: .leading, spacing: 14) {
+                BookCover(path: book.coverPath)
+                    .frame(width: 170, height: 230)
+                    .frame(maxWidth: .infinity)
 
-                Text(book.title).font(.title3).bold().textSelection(.enabled)
+                Text(book.title)
+                    .font(.title3.weight(.semibold))
+                    .textSelection(.enabled)
                 Text(book.author.isEmpty ? "Unknown author" : book.author)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -615,7 +924,7 @@ struct BookDetailView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
                     if let publisher = book.publisher, !publisher.isEmpty {
                         GridRow { Text("Publisher").foregroundStyle(.secondary); Text(publisher) }
                     }
@@ -647,40 +956,8 @@ struct BookDetailView: View {
                     .buttonStyle(.link)
                 }
             }
-            .padding()
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-struct QueueView: View {
-    @ObservedObject var store: AppStore
-    var body: some View {
-        List(store.operations) { op in
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(op.title).font(.headline)
-                    Text("\(op.type) · \(op.status) · \(Int(op.progress * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if op.status == "pending" || op.status == "running" {
-                    Button("Cancel") {
-                        Task { _ = await store.cancelOperation(op.id) }
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-        }
-        .toolbar {
-            Button("Refresh") { store.reloadOperations() }
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                store.reloadOperations(silent: true)
-            }
         }
     }
 }
@@ -692,14 +969,26 @@ struct ConvertView: View {
 
     private let formats = ["azw3", "epub", "mobi", "pdf", "txt"]
 
+    private var convertOperations: [Operation] {
+        Array(store.operations.filter { $0.type == "convert" }.prefix(5))
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            GroupBox("Input") {
-                HStack {
-                    Text(store.convertInput.isEmpty ? "No file selected" : store.convertInput)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Choose…") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Convert")
+                        .font(.title2.weight(.semibold))
+                    Text("Prepare a book for your Kindle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                GroupBox("Input") {
+                    fileRow(
+                        path: store.convertInput,
+                        placeholder: "No file selected"
+                    ) {
                         guard let url = chooseOpenFile(prompt: "Input") else { return }
                         store.convertInput = url.path
                         if store.convertOutput.isEmpty {
@@ -711,14 +1000,12 @@ struct ConvertView: View {
                         store.convertResult = ""
                     }
                 }
-            }
 
-            GroupBox("Output") {
-                HStack {
-                    Text(store.convertOutput.isEmpty ? "No output selected" : store.convertOutput)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Choose…") {
+                GroupBox("Output") {
+                    fileRow(
+                        path: store.convertOutput,
+                        placeholder: "No output selected"
+                    ) {
                         let base = store.convertInput.isEmpty
                             ? "book"
                             : URL(fileURLWithPath: store.convertInput).deletingPathExtension().lastPathComponent
@@ -726,33 +1013,65 @@ struct ConvertView: View {
                         store.convertOutput = url.path
                     }
                 }
-            }
 
-            Picker("Format", selection: $format) {
-                ForEach(formats, id: \.self) { value in
-                    Text(value.uppercased()).tag(value)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Format").font(.caption).foregroundStyle(.secondary)
+                    Picker("Format", selection: $format) {
+                        ForEach(formats, id: \.self) { value in
+                            Text(value.uppercased()).tag(value)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                HStack(spacing: 10) {
+                    Button("Convert") { start() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(busy || store.convertInput.isEmpty || store.convertOutput.isEmpty)
+                    if busy {
+                        ProgressView().controlSize(.small)
+                    }
+                    Spacer()
+                }
+
+                if !store.convertResult.isEmpty {
+                    Text(store.convertResult)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                if !convertOperations.isEmpty {
+                    Divider()
+                    Text("Activity").font(.headline)
+                    VStack(spacing: 8) {
+                        ForEach(convertOperations) { op in
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(op.title).font(.callout).lineLimit(1)
+                                    Text(op.status.capitalized)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if op.status == "pending" || op.status == "running" {
+                                    ProgressView(value: op.progress)
+                                        .frame(width: 100)
+                                    Button("Cancel") {
+                                        Task { _ = await store.cancelOperation(op.id) }
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-
-            HStack {
-                Button("Convert") { start() }
-                    .disabled(busy || store.convertInput.isEmpty || store.convertOutput.isEmpty)
-                if busy {
-                    ProgressView().controlSize(.small)
-                }
-                Spacer()
-            }
-
-            if !store.convertResult.isEmpty {
-                Text(store.convertResult)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            Spacer()
+            .padding(16)
+            .frame(maxWidth: 720, alignment: .leading)
         }
-        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: format) { _, newFormat in
             guard !store.convertOutput.isEmpty else { return }
             store.convertOutput = URL(fileURLWithPath: store.convertOutput)
@@ -760,6 +1079,24 @@ struct ConvertView: View {
                 .appendingPathExtension(newFormat)
                 .path
         }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                store.reloadOperations(silent: true)
+            }
+        }
+    }
+
+    private func fileRow(path: String, placeholder: String, choose: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Text(path.isEmpty ? placeholder : path)
+                .lineLimit(1)
+                .foregroundStyle(path.isEmpty ? .secondary : .primary)
+            Spacer()
+            Button("Choose…", action: choose)
+                .buttonStyle(.borderless)
+        }
+        .padding(.vertical, 2)
     }
 
     private func start() {
@@ -789,7 +1126,6 @@ struct ConvertView: View {
             busy = false
             if isOK(result) {
                 store.convertResult = "Conversion queued"
-                store.section = "queue"
             } else {
                 store.convertResult = result
                 store.lastError = errorText(result)
@@ -832,13 +1168,16 @@ struct DevicesView: View {
     var body: some View {
         VStack(spacing: 0) {
             if store.devices.isEmpty && !store.deviceLoading {
-                ContentUnavailableView(
-                    "No Kindle Connected",
-                    systemImage: "cable.connector",
-                    description: Text("Connect your Kindle with a USB cable and press Refresh.")
-                )
+                ContentUnavailableView {
+                    Label("No Kindle Connected", systemImage: "cable.connector")
+                } description: {
+                    Text("Connect your Kindle with a USB cable.")
+                } actions: {
+                    Button("Refresh") { refresh() }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
-                actionBar
+                deviceHeader
                 Divider()
                 ZStack {
                     List(tree, children: \.children, selection: $selection) { node in
@@ -855,7 +1194,9 @@ struct DevicesView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.vertical, 1)
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .tag(node.id)
                         .onDrag {
                             dragProvider(for: node)
@@ -880,29 +1221,6 @@ struct DevicesView: View {
                     }
                 }
             }
-            Divider()
-            HStack {
-                if store.deviceLoading {
-                    ProgressView().controlSize(.small)
-                }
-                Text(status.isEmpty ? store.deviceStatus : status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                if !store.devices.isEmpty {
-                    Text("\(selection.count) selected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-        }
-        .toolbar {
-            Button("Refresh") { refresh() }
-            Button("New Folder…") { newFolderName = "New Folder"; showNewFolder = true }
-            Button("Upload…") { showUpload = true }
         }
         .onAppear { rebuild() }
         .onChange(of: store.deviceRevision) { _, _ in rebuild() }
@@ -952,8 +1270,30 @@ struct DevicesView: View {
         }
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 8) {
+    private var deviceName: String {
+        store.devices.first(where: { $0.id == store.selectedDeviceKey })?.product ?? "Kindle"
+    }
+
+    private var deviceHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "cable.connector")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(deviceName)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                Text(status.isEmpty ? store.deviceStatus : status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if !selection.isEmpty {
+                Text("\(selection.count) selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
             if store.devices.count > 1 {
                 Picker("Device", selection: Binding(
                     get: { store.selectedDeviceKey ?? "" },
@@ -965,55 +1305,8 @@ struct DevicesView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 180)
-                Divider().frame(height: 20)
+                .frame(width: 160)
             }
-            Button {
-                newFolderName = "New Folder"
-                showNewFolder = true
-            } label: {
-                Label("New Folder", systemImage: "folder.badge.plus")
-            }
-            Button {
-                showUpload = true
-            } label: {
-                Label("Upload", systemImage: "arrow.up.doc")
-            }
-            Button {
-                downloadSelected()
-            } label: {
-                Label("Download", systemImage: "arrow.down.doc")
-            }
-            .disabled(selection.isEmpty || selectedFiles.allSatisfy { $0.isFolder })
-            Button {
-                downloadSelectedToFolder()
-            } label: {
-                Label("Download to Folder", systemImage: "arrow.down.doc.on.clipboard")
-            }
-            .disabled(selection.isEmpty)
-            Button {
-                beginTransfer(selectedFiles, copy: false)
-            } label: {
-                Label("Move", systemImage: "arrow.right.doc.on.clipboard")
-            }
-            .disabled(selection.isEmpty)
-            Button {
-                beginTransfer(selectedFiles, copy: true)
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .disabled(selection.isEmpty)
-            Button {
-                pasteIntoKindle()
-            } label: {
-                Label("Paste", systemImage: "doc.on.clipboard")
-            }
-            Button(role: .destructive) {
-                confirmDelete(selectedFiles)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .disabled(selection.isEmpty)
             if store.deviceTransferActive {
                 if store.deviceTransferBytesTotal > 0 {
                     ProgressView(
@@ -1022,18 +1315,17 @@ struct DevicesView: View {
                     )
                     .frame(width: 100)
                 }
-                Button("Cancel Transfer") { store.cancelDeviceTransfer() }
+                Button("Cancel") { store.cancelDeviceTransfer() }
             }
-            Spacer()
-            Button {
-                refresh()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+            Button { refresh() } label: {
+                Image(systemName: "arrow.clockwise")
             }
+            .buttonStyle(.borderless)
+            .help("Refresh")
             .disabled(store.deviceLoading)
         }
-        .padding(8)
-        .disabled(store.deviceLoading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var selectedFiles: [DeviceFile] {
@@ -1549,8 +1841,6 @@ struct FilesView: View {
     @State private var selection = Set<String>()
     @State private var backStack: [URL] = []
     @State private var forwardStack: [URL] = []
-    @State private var showHidden = false
-    @State private var booksOnly = false
     @State private var search = ""
     @State private var status = ""
 
@@ -1599,9 +1889,6 @@ struct FilesView: View {
         if !search.isEmpty {
             list = list.filter { $0.name.localizedCaseInsensitiveContains(search) }
         }
-        if booksOnly {
-            list = list.filter { $0.isDir || bookExtensions.contains($0.url.pathExtension.lowercased()) }
-        }
         return list
     }
 
@@ -1618,21 +1905,18 @@ struct FilesView: View {
     var body: some View {
         HSplitView {
             sidebar
-                .frame(minWidth: 160, idealWidth: 185, maxWidth: 240)
+                .frame(idealWidth: 185, maxWidth: 240)
 
             VStack(spacing: 0) {
                 navigationBar
-                Divider()
-                actionBar
                 Divider()
                 fileList
                 Divider()
                 statusBar
             }
-            .frame(minWidth: 520)
+
         }
         .onAppear { reload() }
-        .onChange(of: showHidden) { _, _ in reload() }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data]) { result in
             guard case .success(let url) = result else { return }
             let ok = url.startAccessingSecurityScopedResource()
@@ -1680,7 +1964,8 @@ struct FilesView: View {
                 }
             }
         }
-        .listStyle(.sidebar)
+        .listStyle(.inset)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func sidebarRow(_ place: Place) -> some View {
@@ -1724,93 +2009,14 @@ struct FilesView: View {
 
             TextField("Search", text: $search)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 160)
-
-            Toggle("Books", isOn: $booksOnly)
-                .toggleStyle(.button)
-                .help("Show only book files")
-            Toggle("Hidden", isOn: $showHidden)
-                .toggleStyle(.button)
-                .help("Show hidden files")
+                .frame(width: 180)
         }
-        .padding(8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .alert("New Folder", isPresented: $showNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Create") { createFolder() }
             Button("Cancel", role: .cancel) {}
-        }
-    }
-
-    private var actionBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                newFolderName = "untitled folder"
-                showNewFolder = true
-            } label: {
-                Label("New Folder", systemImage: "folder.badge.plus")
-            }
-            Button {
-                if selection.isEmpty {
-                    showImporter = true
-                } else {
-                    beginUploadToKindle(selectedEntries.map(\.url), move: false)
-                }
-            } label: {
-                Label("Upload to Kindle", systemImage: "arrow.up.doc")
-            }
-            Button {
-                copySelection()
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .disabled(selection.isEmpty)
-            Button {
-                cutSelection()
-            } label: {
-                Label("Cut", systemImage: "scissors")
-            }
-            .disabled(selection.isEmpty)
-            Button {
-                paste()
-            } label: {
-                Label("Paste", systemImage: "doc.on.clipboard")
-            }
-            Button {
-                moveSelectionTo()
-            } label: {
-                Label("Move To…", systemImage: "arrow.right.doc.on.clipboard")
-            }
-            .disabled(selection.isEmpty)
-            Button(role: .destructive) {
-                confirmDelete(selectionURLs)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-            .disabled(selection.isEmpty)
-            if store.deviceTransferActive {
-                if store.deviceTransferBytesTotal > 0 {
-                    ProgressView(
-                        value: Double(min(store.deviceTransferBytesSent, store.deviceTransferBytesTotal)),
-                        total: Double(store.deviceTransferBytesTotal)
-                    )
-                    .frame(width: 100)
-                }
-                Button("Cancel Transfer") { store.cancelDeviceTransfer() }
-            }
-            Spacer()
-            Button {
-                reload()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .alert("Move to Trash?", isPresented: $showDelete) {
-            Button("Move to Trash", role: .destructive) { performDelete() }
-            Button("Cancel", role: .cancel) { pendingDelete = [] }
-        } message: {
-            Text("\(pendingDelete.count) item(s) will be moved to the Trash.")
         }
     }
 
@@ -1837,7 +2043,9 @@ struct FilesView: View {
                             .frame(width: 135, alignment: .trailing)
                     }
                 }
-                .padding(.vertical, 1)
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .tag(entry.path)
                 .onDrag {
                     NSItemProvider(contentsOf: entry.url) ?? NSItemProvider(object: entry.url as NSURL)
@@ -1881,8 +2089,8 @@ struct FilesView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 
     private var selectedEntries: [LocalEntry] {
@@ -1901,9 +2109,9 @@ struct FilesView: View {
                 newFolderName = "untitled folder"
                 showNewFolder = true
             }
+            Button("Upload File…") { showImporter = true }
             Button("Paste") { paste() }
             Divider()
-            Toggle("Show Hidden Files", isOn: $showHidden)
             Button("Refresh") { reload() }
         } else {
             let urls = chosen.map(\.url)
@@ -1966,10 +2174,9 @@ struct FilesView: View {
         let token = UUID()
         reloadToken = token
         let directory = currentURL
-        let hidden = showHidden
         Task {
             let loaded = await Task.detached(priority: .userInitiated) {
-                listLocal(directory, showHidden: hidden)
+                listLocal(directory, showHidden: false)
             }.value
             guard token == reloadToken,
                   directory.standardizedFileURL.path == currentURL.standardizedFileURL.path else {
@@ -2174,9 +2381,9 @@ struct FilesView: View {
                 newFolderName = "untitled folder"
                 showNewFolder = true
             },
+            .item("Upload File…") { showImporter = true },
             .item("Paste") { paste() },
             .separator,
-            .item("Show Hidden Files") { showHidden.toggle() },
             .item("Refresh") { reload() },
         ]
     }
