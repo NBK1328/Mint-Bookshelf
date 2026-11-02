@@ -1,8 +1,7 @@
 package device
 
 /*
-#cgo CFLAGS: -I/opt/homebrew/include
-#cgo LDFLAGS: -L/opt/homebrew/lib -lmtp -lusb-1.0
+#cgo pkg-config: libmtp libusb-1.0
 #include <stdlib.h>
 #include <libmtp.h>
 */

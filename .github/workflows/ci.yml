@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        run: brew install pkg-config libmtp libusb
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go dependencies
+        run: go mod download
+
+      - name: Go format
+        run: test -z "$(gofmt -l .)"
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go build
+        run: go build ./...
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Go race tests
+        run: go test -race ./internal/operations ./internal/converter ./internal/device ./internal/library ./internal/storage
+
+      - name: Build core dylib
+        run: make build-core
+
+      - name: Swift tests
+        run: swift test --package-path macos
+
+      - name: C header syntax
+        run: printf '#include "kindle_manager.h"\nint main(void) { return 0; }\n' | clang -fsyntax-only -I bridge/include -x c -

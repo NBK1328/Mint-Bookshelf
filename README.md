@@ -32,18 +32,20 @@ confirmation. MTP transfers report status but not live progress yet.
 ## Build
 
 ```sh
-brew install libmtp libusb
-make build-core
-make build-macos
+brew install pkg-config libmtp libusb
+make check-deps
+make package
 ```
 
-Then assemble and run the app bundle; see `docs/BUILD.md` for the exact
-`install_name_tool`, `codesign` and `open` steps.
+Then run the packaged app. See `docs/BUILD.md` for manual steps, CI and
+troubleshooting.
 
 ## Tests
 
 ```sh
 go test ./...
+make test-race
+cd macos && swift test
 ```
 
 ## Notes
