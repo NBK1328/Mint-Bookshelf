@@ -84,6 +84,7 @@ struct Book: Codable, Identifiable, Hashable {
     let size: Int64
     let path: String?
     let coverPath: String?
+    let addedAt: Date?
 }
 
 struct Operation: Codable, Identifiable {
@@ -235,7 +236,9 @@ func decodeEnvelope<T: Decodable>(_ raw: String, as type: T.Type) throws -> T {
     guard let data = raw.data(using: .utf8) else {
         throw APIError.message("empty response")
     }
-    let response = try JSONDecoder().decode(APIResponse<T>.self, from: data)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let response = try decoder.decode(APIResponse<T>.self, from: data)
     guard response.ok else {
         throw APIError.message(response.error ?? "request failed")
     }
@@ -488,6 +491,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @ObservedObject var store: AppStore
     @State private var showLanguageMenu = false
+    @State private var hoveredLanguage: AppLanguage?
 
     private var paletteScheme: ColorScheme { store.theme.colorScheme }
 
@@ -533,6 +537,7 @@ struct ContentView: View {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 10) {
                     Button {
+                        hoveredLanguage = nil
                         showLanguageMenu.toggle()
                     } label: {
                         topBarIcon("globe")
@@ -569,6 +574,7 @@ struct ContentView: View {
             ForEach(AppLanguage.allCases) { language in
                 Button {
                     store.language = language
+                    hoveredLanguage = nil
                     showLanguageMenu = false
                 } label: {
                     Text(language.displayName)
@@ -583,12 +589,17 @@ struct ContentView: View {
                         .background(
                             store.language == language
                                 ? AppPalette.accent(paletteScheme).opacity(0.16)
-                                : Color.clear,
+                                : hoveredLanguage == language
+                                    ? AppPalette.hover(paletteScheme)
+                                    : Color.clear,
                             in: RoundedRectangle(cornerRadius: 6)
                         )
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    hoveredLanguage = hovering ? language : (hoveredLanguage == language ? nil : hoveredLanguage)
+                }
             }
         }
         .padding(8)
@@ -644,11 +655,35 @@ enum LibraryLayout: String, CaseIterable, Identifiable {
     }
 }
 
+enum LibrarySort: String, CaseIterable, Identifiable {
+    case titleAscending
+    case titleDescending
+    case authorAscending
+    case authorDescending
+    case addedNewest
+    case addedOldest
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .titleAscending: return "Title A–Z"
+        case .titleDescending: return "Title Z–A"
+        case .authorAscending: return "Author A–Z"
+        case .authorDescending: return "Author Z–A"
+        case .addedNewest: return "Date added: newest"
+        case .addedOldest: return "Date added: oldest"
+        }
+    }
+}
+
 struct LibraryView: View {
     @ObservedObject var store: AppStore
     @State private var search = ""
     @State private var layout: LibraryLayout = .grid
-    @State private var sortAscending = true
+    @State private var sort: LibrarySort = .titleAscending
+    @State private var showSortMenu = false
+    @State private var hoveredSort: LibrarySort?
     @FocusState private var searchFocused: Bool
 
     private var filteredBooks: [Book] {
@@ -661,15 +696,80 @@ struct LibraryView: View {
                     || ($0.series ?? "").localizedCaseInsensitiveContains(query)
             }
         }
-        return list.sorted {
-            let result = $0.title.localizedCaseInsensitiveCompare($1.title)
-            return sortAscending ? result == .orderedAscending : result == .orderedDescending
+        return list.sorted(by: sortBooks)
+    }
+
+    private func sortBooks(_ lhs: Book, _ rhs: Book) -> Bool {
+        let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        switch sort {
+        case .titleAscending:
+            return titleOrder == .orderedAscending
+        case .titleDescending:
+            return titleOrder == .orderedDescending
+        case .authorAscending, .authorDescending:
+            let leftAuthor = lhs.author.isEmpty ? " " : lhs.author
+            let rightAuthor = rhs.author.isEmpty ? " " : rhs.author
+            let authorOrder = leftAuthor.localizedCaseInsensitiveCompare(rightAuthor)
+            if authorOrder == .orderedSame {
+                return titleOrder == .orderedAscending
+            }
+            return sort == .authorAscending ? authorOrder == .orderedAscending : authorOrder == .orderedDescending
+        case .addedNewest:
+            return (lhs.addedAt ?? .distantPast) > (rhs.addedAt ?? .distantPast)
+        case .addedOldest:
+            return (lhs.addedAt ?? .distantFuture) < (rhs.addedAt ?? .distantFuture)
         }
     }
 
     private var folderName: String {
         guard let root = store.libraryRoot else { return store.t("Library") }
         return URL(fileURLWithPath: root).lastPathComponent
+    }
+
+    private var sortMenu: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(LibrarySort.allCases) { option in
+                Button {
+                    sort = option
+                    hoveredSort = nil
+                    showSortMenu = false
+                } label: {
+                    Text(store.t(option.title))
+                        .font(.callout)
+                        .fontWeight(sort == option ? .semibold : .regular)
+                        .foregroundStyle(sort == option
+                            ? AppPalette.accent(store.theme.colorScheme)
+                            : Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            sort == option
+                                ? AppPalette.accent(store.theme.colorScheme).opacity(0.16)
+                                : hoveredSort == option
+                                    ? AppPalette.hover(store.theme.colorScheme)
+                                    : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    hoveredSort = hovering ? option : (hoveredSort == option ? nil : hoveredSort)
+                }
+            }
+        }
+        .padding(8)
+        .frame(width: 250)
+        .background(
+            AppPalette.panel(store.theme.colorScheme),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppPalette.border(store.theme.colorScheme), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
     }
 
     private var bookCountText: String {
@@ -704,6 +804,7 @@ struct LibraryView: View {
     private var libraryContent: some View {
         VStack(spacing: 0) {
             header
+                .zIndex(10)
 
             if store.libraryScanning {
                 ProgressView(store.t("Scanning…"))
@@ -786,12 +887,27 @@ struct LibraryView: View {
             .labelsHidden()
             .frame(width: 88)
             Button {
-                sortAscending.toggle()
+                hoveredSort = nil
+                showSortMenu.toggle()
             } label: {
-                Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                Image(systemName: "arrow.up.arrow.down")
             }
             .buttonStyle(.borderless)
-            .help(store.t(sortAscending ? "Sort Z–A" : "Sort A–Z"))
+            .help(store.t("Sort"))
+            .overlay(alignment: .topTrailing) {
+                if showSortMenu {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture { showSortMenu = false }
+
+                        sortMenu
+                            .offset(y: 28)
+                    }
+                    .zIndex(20)
+                }
+            }
             Button {
                 Task { _ = await store.rescanLibrary() }
             } label: {

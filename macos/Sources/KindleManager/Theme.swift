@@ -32,6 +32,10 @@ enum AppPalette {
     static func secondaryText(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(hex: 0x97A7AC) : .secondary
     }
+
+    static func hover(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.06)
+    }
 }
 
 private extension Color {
