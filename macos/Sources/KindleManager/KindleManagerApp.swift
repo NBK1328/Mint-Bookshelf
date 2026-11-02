@@ -564,7 +564,7 @@ struct ContentView: View {
                 .frame(width: 32, height: 28)
                 .foregroundStyle(store.section == section.rawValue
                     ? AppPalette.accent(paletteScheme)
-                    : Color.primary.opacity(0.75))
+                    : AppPalette.base(paletteScheme))
                 .background(
                     store.section == section.rawValue
                         ? AppPalette.accent(paletteScheme).opacity(0.14)
@@ -840,7 +840,7 @@ struct BookCover: View {
                 } else {
                     Image(systemName: "book.closed")
                         .font(.title3)
-                        .foregroundStyle(AppPalette.secondaryText(colorScheme))
+                        .foregroundStyle(AppPalette.base(colorScheme))
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
