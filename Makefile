@@ -1,4 +1,4 @@
-.PHONY: build-core test test-race build-macos build-cli package check-deps fmt
+.PHONY: build-core test test-race build-macos build-cli package dmg notarize check-deps fmt
 
 build-core:
 	go build -buildmode=c-shared -o build/libkindlecore.dylib ./internal/bridge
@@ -25,3 +25,9 @@ package: build-core build-macos
 
 check-deps:
 	./scripts/check-deps.sh
+
+dmg: package
+	./scripts/dmg.sh
+
+notarize: package
+	./scripts/notarize.sh

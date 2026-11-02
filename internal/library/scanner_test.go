@@ -92,3 +92,39 @@ func TestScanAbortsWithoutDeletingOnWalkError(t *testing.T) {
 		t.Fatalf("books after failed scan = %d, want 1", len(books))
 	}
 }
+
+func TestScanDetectsMoveByFingerprint(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.txt")
+	if err := os.WriteFile(source, []byte("same content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dbf, _ := os.CreateTemp("", "km-move-*.db")
+	dbf.Close()
+	os.Remove(dbf.Name())
+	db, _ := storage.Open(dbf.Name())
+	defer db.Close()
+	defer os.Remove(dbf.Name())
+
+	sc := NewScanner(db)
+	if result, err := sc.ScanRoot(dir); err != nil || result.Added != 1 {
+		t.Fatalf("initial scan = %+v, %v", result, err)
+	}
+
+	renamed := filepath.Join(dir, "renamed.txt")
+	if err := os.Rename(source, renamed); err != nil {
+		t.Fatal(err)
+	}
+	result, err := sc.ScanRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Moved != 1 || result.Added != 0 || result.Deleted != 0 {
+		t.Fatalf("move scan = %+v", result)
+	}
+	books, _ := db.Books()
+	resolvedRenamed, _ := filepath.EvalSymlinks(renamed)
+	if len(books) != 1 || books[0].Path != resolvedRenamed {
+		t.Fatalf("books = %+v", books)
+	}
+}

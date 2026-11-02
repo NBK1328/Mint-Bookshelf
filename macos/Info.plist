@@ -6,6 +6,8 @@
 	<string>Kindle Manager</string>
 	<key>CFBundleExecutable</key>
 	<string>KindleManager</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.kindlemanager.app</string>
 	<key>CFBundleName</key>

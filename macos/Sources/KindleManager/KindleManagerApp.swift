@@ -32,6 +32,12 @@ struct InitPayload: Decodable {
     let error: String?
 }
 
+struct TransferProgressPayload: Decodable {
+    let active: Bool
+    let sent: UInt64
+    let total: UInt64
+}
+
 struct CreateFolderPayload: Decodable {
     let ok: Bool
     let id: UInt32?
@@ -42,6 +48,7 @@ struct ScanData: Decodable {
     let scanned: Int?
     let added: Int?
     let updated: Int?
+    let moved: Int?
     let deleted: Int?
 }
 
@@ -180,6 +187,10 @@ func KM_DeviceIsConnected() -> Int32
 func KM_DeviceDiscover() -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_DeviceListBooks")
 func KM_DeviceListBooks() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("KM_DeviceTransferProgress")
+func KM_DeviceTransferProgress() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("KM_DeviceCancelTransfer")
+func KM_DeviceCancelTransfer() -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_ConvertBook")
 func KM_ConvertBook(_ input: UnsafePointer<CChar>?, _ output: UnsafePointer<CChar>?, _ format: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_OperationList")
@@ -1004,6 +1015,13 @@ struct DevicesView: View {
             }
             .disabled(selection.isEmpty)
             if store.deviceTransferActive {
+                if store.deviceTransferBytesTotal > 0 {
+                    ProgressView(
+                        value: Double(min(store.deviceTransferBytesSent, store.deviceTransferBytesTotal)),
+                        total: Double(store.deviceTransferBytesTotal)
+                    )
+                    .frame(width: 100)
+                }
                 Button("Cancel Transfer") { store.cancelDeviceTransfer() }
             }
             Spacer()
@@ -1770,6 +1788,13 @@ struct FilesView: View {
             }
             .disabled(selection.isEmpty)
             if store.deviceTransferActive {
+                if store.deviceTransferBytesTotal > 0 {
+                    ProgressView(
+                        value: Double(min(store.deviceTransferBytesSent, store.deviceTransferBytesTotal)),
+                        total: Double(store.deviceTransferBytesTotal)
+                    )
+                    .frame(width: 100)
+                }
                 Button("Cancel Transfer") { store.cancelDeviceTransfer() }
             }
             Spacer()

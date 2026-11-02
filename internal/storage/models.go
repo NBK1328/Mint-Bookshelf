@@ -39,3 +39,11 @@ type Operation struct {
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
 	Error     string     `json:"error,omitempty"`
 }
+
+type DeviceFolder struct {
+	DeviceKey string
+	StorageID uint32
+	ObjectID  uint32
+	ParentID  uint32
+	Name      string
+}

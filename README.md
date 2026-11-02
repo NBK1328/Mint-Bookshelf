@@ -6,7 +6,8 @@ Kindle over USB (MTP).
 Status: working prototype. Verified on a physical Kindle Scribe (MTP, one
 storage). The app browses the device tree, uploads/downloads files, creates
 folders, moves/copies objects, renames files and deletes from the device with
-confirmation. MTP transfers report status but not live progress yet.
+confirmation. MTP transfers expose byte-level progress and cancellation, and
+conversion runs through a live operation queue.
 
 ## Architecture
 
@@ -24,7 +25,7 @@ confirmation. MTP transfers report status but not live progress yet.
 - Local Finder-style browser with background listing, navigation, search and filters
 - Finder-compatible copy/cut/paste, drag-in and drag-out
 - Live operation queue with progress and cancel
-- Batch MTP transfer progress and cancellation between files
+- Byte-level MTP transfer progress with cancellation
 - Conversion form with file pickers, format selection and queue hand-off
 - Library search/sort, covers and a book details panel
 - Empty-area context menus on both file lists
@@ -37,8 +38,10 @@ make check-deps
 make package
 ```
 
-Then run the packaged app. See `docs/BUILD.md` for manual steps, CI and
-troubleshooting.
+Then run the packaged app. `make dmg` creates a DMG; `make notarize` supports
+Developer ID/notarization when credentials are supplied. The optional
+`.github/workflows/hardware.yml` runs the real-device test on a self-hosted
+macOS runner. See `docs/BUILD.md` for manual steps, CI and troubleshooting.
 
 ## Tests
 
@@ -51,7 +54,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-pa
 ## Notes
 
 - Only modern MTP Kindles are supported; USB mass-storage Kindles are not.
-- Multiple Amazon devices are selectable; reconnect is manual.
+- Multiple Amazon devices are selectable; discovery/reconnect is polled.
 - Device delete is permanent and requires confirmation.
 - The app keeps one MTP session open; do not run other MTP tools concurrently.
 - `docs/` is local-only and ignored by Git.

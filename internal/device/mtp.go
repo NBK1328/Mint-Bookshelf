@@ -4,10 +4,16 @@ package device
 #cgo pkg-config: libmtp libusb-1.0
 #include <stdlib.h>
 #include <libmtp.h>
+
+int km_send_file_with_progress(LIBMTP_mtpdevice_t *device, const char *path,
+                               LIBMTP_file_t *file, void *data);
+int km_get_file_with_progress(LIBMTP_mtpdevice_t *device, uint32_t object_id,
+                              const char *path, void *data);
 */
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,9 +66,60 @@ func Detect() ([]RawDevice, error) {
 }
 
 type Session struct {
-	ptr          *C.LIBMTP_mtpdevice_t
-	knownMu      sync.Mutex
-	knownFolders map[objectKey]FileEntry
+	ptr           *C.LIBMTP_mtpdevice_t
+	knownMu       sync.Mutex
+	knownFolders  map[objectKey]FileEntry
+	progressMu    sync.Mutex
+	progress      bool
+	progressSent  uint64
+	progressTotal uint64
+	cancel        bool
+}
+
+var ErrTransferCancelled = errors.New("transfer cancelled")
+
+func (s *Session) beginTransfer() {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	s.progress = true
+	s.progressSent = 0
+	s.progressTotal = 0
+	s.cancel = false
+}
+
+func (s *Session) endTransfer() {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	s.progress = false
+	s.cancel = false
+}
+
+func (s *Session) reportProgress(sent, total uint64) bool {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	s.progressSent = sent
+	s.progressTotal = total
+	return s.cancel
+}
+
+func (s *Session) TransferProgress() (sent, total uint64, active bool) {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	return s.progressSent, s.progressTotal, s.progress
+}
+
+func (s *Session) CancelTransfer() {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	if s.progress {
+		s.cancel = true
+	}
+}
+
+func (s *Session) wasCancelled() bool {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	return s.cancel
 }
 
 func Open(dev RawDevice) (*Session, error) {
@@ -165,6 +222,22 @@ func (s *Session) updateKnownFolder(id uint32, update func(*FileEntry)) {
 	}
 	for _, f := range updated {
 		s.knownFolders[objectKey{storageID: f.StorageID, objectID: f.ID}] = f
+	}
+}
+
+func (s *Session) KnownFolders() []FileEntry {
+	return s.knownFolderSnapshot()
+}
+
+func (s *Session) SetKnownFolders(folders []FileEntry) {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	s.knownFolders = map[objectKey]FileEntry{}
+	for _, folder := range folders {
+		if !folder.IsFolder {
+			continue
+		}
+		s.knownFolders[objectKey{storageID: folder.StorageID, objectID: folder.ID}] = folder
 	}
 }
 
@@ -418,12 +491,22 @@ func (s *Session) Upload(localPath string, parentID uint32, storageID uint32, on
 	ft.parent_id = C.uint(parentID)
 	ft.storage_id = C.uint(storageID)
 	ft.filetype = C.LIBMTP_FILETYPE_UNKNOWN
-	// progress callback
-	_ = onProgress
+	s.beginTransfer()
+	defer s.endTransfer()
+	data, cleanup := registerProgress(func(sent, total uint64) bool {
+		if onProgress != nil {
+			onProgress(sent, total)
+		}
+		return s.reportProgress(sent, total)
+	})
+	defer cleanup()
 	cpath := C.CString(localPath)
 	defer C.free(unsafe.Pointer(cpath))
-	ret := C.LIBMTP_Send_File_From_File(s.ptr, cpath, ft, nil, nil)
+	ret := C.km_send_file_with_progress(s.ptr, cpath, ft, data)
 	if ret != 0 {
+		if s.wasCancelled() {
+			return ErrTransferCancelled
+		}
 		return fmt.Errorf("upload failed: %d", int(ret))
 	}
 	return nil
@@ -480,13 +563,25 @@ func IsConnected() bool {
 }
 
 func (s *Session) Download(objectID uint32, localPath string, onProgress func(sent, total uint64)) error {
+	s.beginTransfer()
+	defer s.endTransfer()
+	data, cleanup := registerProgress(func(sent, total uint64) bool {
+		if onProgress != nil {
+			onProgress(sent, total)
+		}
+		return s.reportProgress(sent, total)
+	})
+	defer cleanup()
 	cpath := C.CString(localPath)
 	defer C.free(unsafe.Pointer(cpath))
-	ret := C.LIBMTP_Get_File_To_File(s.ptr, C.uint(objectID), cpath, nil, nil)
+	ret := C.km_get_file_with_progress(s.ptr, C.uint(objectID), cpath, data)
 	if ret != 0 {
+		if s.wasCancelled() {
+			_ = os.Remove(localPath)
+			return ErrTransferCancelled
+		}
 		return fmt.Errorf("download failed: %d", int(ret))
 	}
-	_ = onProgress
 	return nil
 }
 

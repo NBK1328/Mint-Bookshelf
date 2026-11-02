@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -38,6 +39,8 @@ var logger *slog.Logger
 var logFile *os.File
 var currentDevice *device.Session
 var currentBus, currentDev int
+var currentDeviceKey string
+var progressDevice atomic.Pointer[device.Session]
 var deviceMu sync.Mutex
 
 //export KM_Initialize
@@ -87,11 +90,14 @@ func shutdown() {
 		logger.Warn("shutdown timed out waiting for operations")
 	}
 	deviceMu.Lock()
+	saveDeviceFolders()
+	progressDevice.Store(nil)
 	if currentDevice != nil {
 		currentDevice.Close()
 		currentDevice = nil
 	}
 	currentBus, currentDev = 0, 0
+	currentDeviceKey = ""
 	deviceMu.Unlock()
 	if state != nil {
 		if state.db != nil && allDone {
@@ -173,6 +179,61 @@ func KM_DeviceGetList() *C.char {
 	return C.CString(dataJSON(devs))
 }
 
+func deviceKeyFor(info map[string]string, bus, dev int, storages []device.Storage) string {
+	if serial := info["serial"]; serial != "" {
+		return "serial:" + serial
+	}
+	if model := info["model"]; model != "" {
+		ids := ""
+		for _, storage := range storages {
+			ids += fmt.Sprintf("%d,", storage.ID)
+		}
+		return "model:" + model + "|" + ids
+	}
+	return fmt.Sprintf("bus:%d:%d", bus, dev)
+}
+
+func loadDeviceFolders(sess *device.Session, key string) {
+	if state == nil || state.db == nil || key == "" {
+		return
+	}
+	folders, err := state.db.DeviceFolders(key)
+	if err != nil || len(folders) == 0 {
+		return
+	}
+	entries := make([]device.FileEntry, 0, len(folders))
+	for _, folder := range folders {
+		entries = append(entries, device.FileEntry{
+			ID:        folder.ObjectID,
+			ParentID:  folder.ParentID,
+			StorageID: folder.StorageID,
+			Name:      folder.Name,
+			IsFolder:  true,
+		})
+	}
+	sess.SetKnownFolders(entries)
+}
+
+func saveDeviceFolders() {
+	if state == nil || state.db == nil || currentDevice == nil || currentDeviceKey == "" {
+		return
+	}
+	folders := currentDevice.KnownFolders()
+	records := make([]storage.DeviceFolder, 0, len(folders))
+	for _, folder := range folders {
+		records = append(records, storage.DeviceFolder{
+			DeviceKey: currentDeviceKey,
+			StorageID: folder.StorageID,
+			ObjectID:  folder.ID,
+			ParentID:  folder.ParentID,
+			Name:      folder.Name,
+		})
+	}
+	if err := state.db.ReplaceDeviceFolders(currentDeviceKey, records); err != nil && logger != nil {
+		logger.Warn("failed to persist device folders", "err", err)
+	}
+}
+
 //export KM_DeviceGetInfo
 func KM_DeviceGetInfo(bus, dev int) *C.char {
 	deviceMu.Lock()
@@ -186,12 +247,16 @@ func KM_DeviceGetInfo(bus, dev int) *C.char {
 				"storages": currentDevice.Storages(),
 			}))
 		}
+		progressDevice.Store(nil)
 		currentDevice.Close()
 		currentDevice = nil
+		currentDeviceKey = ""
 	}
 	if currentDevice != nil {
+		progressDevice.Store(nil)
 		currentDevice.Close()
 		currentDevice = nil
+		currentDeviceKey = ""
 	}
 	devs, err := device.Detect()
 	if err != nil {
@@ -210,14 +275,18 @@ func KM_DeviceGetInfo(bus, dev int) *C.char {
 				return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 			}
 			currentDevice = sess
+			progressDevice.Store(sess)
 			currentBus, currentDev = bus, dev
 			info := sess.Info()
+			storages := sess.Storages()
+			currentDeviceKey = deviceKeyFor(info, bus, dev, storages)
+			loadDeviceFolders(sess, currentDeviceKey)
 			if logger != nil {
 				logger.Info("device opened", "bus", bus, "dev", dev, "info", info)
 			}
 			return C.CString(dataJSON(map[string]any{
 				"info":     info,
-				"storages": sess.Storages(),
+				"storages": storages,
 			}))
 		}
 	}
@@ -254,7 +323,26 @@ func KM_DeviceListBooks() *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(dataJSON(files))
+}
+
+//export KM_DeviceTransferProgress
+func KM_DeviceTransferProgress() *C.char {
+	sess := progressDevice.Load()
+	if sess == nil {
+		return C.CString(dataJSON(map[string]any{"active": false, "sent": 0, "total": 0}))
+	}
+	sent, total, active := sess.TransferProgress()
+	return C.CString(dataJSON(map[string]any{"active": active, "sent": sent, "total": total}))
+}
+
+//export KM_DeviceCancelTransfer
+func KM_DeviceCancelTransfer() *C.char {
+	if sess := progressDevice.Load(); sess != nil {
+		sess.CancelTransfer()
+	}
+	return C.CString(mustJSON(map[string]any{"ok": true}))
 }
 
 //export KM_DeviceUploadBook
@@ -295,6 +383,7 @@ func KM_DeviceDeleteBook(objectID uint32) *C.char {
 		}
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(mustJSON(map[string]any{"ok": true}))
 }
 
@@ -523,6 +612,7 @@ func KM_DeviceMoveBook(objectID, storageID, parentID uint32) *C.char {
 		}
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(mustJSON(map[string]any{"ok": true}))
 }
 
@@ -542,6 +632,7 @@ func KM_DeviceCopyBook(objectID, storageID, parentID uint32) *C.char {
 		}
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(mustJSON(map[string]any{"ok": true}))
 }
 
@@ -556,6 +647,7 @@ func KM_DeviceCreateFolder(name *C.char, parentID, storageID uint32) *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(mustJSON(map[string]any{"ok": true, "id": id}))
 }
 
@@ -569,6 +661,7 @@ func KM_DeviceRenameBook(objectID uint32, newName *C.char) *C.char {
 	if err := currentDevice.Rename(objectID, C.GoString(newName)); err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
+	saveDeviceFolders()
 	return C.CString(mustJSON(map[string]any{"ok": true}))
 }
 

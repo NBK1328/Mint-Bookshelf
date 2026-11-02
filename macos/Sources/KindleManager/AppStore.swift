@@ -25,8 +25,13 @@ class AppStore: ObservableObject {
     @Published var deviceTransferCancelled = false
     @Published var deviceTransferDone = 0
     @Published var deviceTransferTotal = 0
+    @Published var deviceTransferBytesSent: UInt64 = 0
+    @Published var deviceTransferBytesTotal: UInt64 = 0
 
     private let deviceQueue = DispatchQueue(label: "com.kindlemanager.device", qos: .userInitiated)
+    private let progressQueue = DispatchQueue(label: "com.kindlemanager.progress", qos: .utility)
+    private var monitorTask: Task<Void, Never>?
+    private var progressTask: Task<Void, Never>?
     private let libraryQueue = DispatchQueue(label: "com.kindlemanager.library", qos: .userInitiated)
     private var refreshInFlight = false
 
@@ -44,6 +49,29 @@ class AppStore: ObservableObject {
         reloadBooks()
         reloadOperations()
         refreshDevice()
+        monitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self else { return }
+                if self.devices.isEmpty {
+                    self.refreshDevice()
+                    continue
+                }
+                let connected = await self.runOnDeviceQueue { KM_DeviceIsConnected() != 0 }
+                if !connected {
+                    self.devices = []
+                    self.deviceFiles = []
+                    self.selectedDeviceKey = nil
+                    self.deviceState = "disconnected"
+                    self.deviceStatus = "Kindle disconnected"
+                }
+            }
+        }
+    }
+
+    deinit {
+        monitorTask?.cancel()
+        progressTask?.cancel()
     }
 
     func reloadBooks() {
@@ -119,19 +147,49 @@ class AppStore: ObservableObject {
         deviceTransferCancelled = false
         deviceTransferDone = 0
         deviceTransferTotal = total
+        deviceTransferBytesSent = 0
+        deviceTransferBytesTotal = 0
+
+        progressTask?.cancel()
+        progressTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard let self, self.deviceTransferActive else { return }
+                if let payload = await self.fetchTransferProgress() {
+                    self.deviceTransferBytesSent = payload.sent
+                    self.deviceTransferBytesTotal = payload.total
+                }
+            }
+        }
     }
 
     func finishDeviceTransfer() {
+        progressTask?.cancel()
+        progressTask = nil
         deviceTransferActive = false
         deviceTransferCancelled = false
         deviceTransferDone = 0
         deviceTransferTotal = 0
+        deviceTransferBytesSent = 0
+        deviceTransferBytesTotal = 0
     }
 
     func cancelDeviceTransfer() {
         if deviceTransferActive {
             deviceTransferCancelled = true
+            progressQueue.async {
+                _ = kmString(KM_DeviceCancelTransfer())
+            }
         }
+    }
+
+    private func fetchTransferProgress() async -> TransferProgressPayload? {
+        let raw = await withCheckedContinuation { continuation in
+            progressQueue.async {
+                continuation.resume(returning: kmString(KM_DeviceTransferProgress()))
+            }
+        }
+        return try? decodeEnvelope(raw, as: TransferProgressPayload.self)
     }
 
     func selectDevice(_ key: String) {

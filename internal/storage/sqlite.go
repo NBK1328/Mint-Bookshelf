@@ -64,6 +64,14 @@ func (d *DB) migrate() error {
 			path TEXT NOT NULL UNIQUE
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE IF NOT EXISTS device_folders (
+			device_key TEXT NOT NULL,
+			storage_id INTEGER NOT NULL,
+			object_id INTEGER NOT NULL,
+			parent_id INTEGER NOT NULL,
+			name TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (device_key, storage_id, object_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS operations (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
@@ -134,6 +142,11 @@ func (d *DB) Books() ([]Book, error) {
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) MoveBookPath(id int64, newPath string) error {
+	_, err := d.sql.Exec(`UPDATE books SET path=?, deleted=0 WHERE id=?`, newPath, id)
+	return err
 }
 
 func (d *DB) DeleteBookPath(path string) error {
@@ -238,6 +251,48 @@ func (d *DB) ListOperations() ([]Operation, error) {
 		out = []Operation{}
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) DeviceFolders(deviceKey string) ([]DeviceFolder, error) {
+	rows, err := d.sql.Query(`SELECT storage_id, object_id, parent_id, name FROM device_folders WHERE device_key=?`, deviceKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeviceFolder
+	for rows.Next() {
+		var folder DeviceFolder
+		folder.DeviceKey = deviceKey
+		if err := rows.Scan(&folder.StorageID, &folder.ObjectID, &folder.ParentID, &folder.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, folder)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) ReplaceDeviceFolders(deviceKey string, folders []DeviceFolder) error {
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM device_folders WHERE device_key=?`, deviceKey); err != nil {
+		tx.Rollback()
+		return err
+	}
+	statement, err := tx.Prepare(`INSERT OR REPLACE INTO device_folders(device_key, storage_id, object_id, parent_id, name) VALUES(?,?,?,?,?)`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer statement.Close()
+	for _, folder := range folders {
+		if _, err := statement.Exec(deviceKey, folder.StorageID, folder.ObjectID, folder.ParentID, folder.Name); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (d *DB) WithTx(fn func(*sql.Tx) error) error {

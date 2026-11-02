@@ -16,14 +16,21 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$ROOT/macos/Info.plist" "$APP/Contents/Info.plist"
+if [[ -f "$ROOT/macos/Assets/AppIcon.icns" ]]; then
+  cp "$ROOT/macos/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
 cp "$BIN" "$APP/Contents/MacOS/KindleManager"
 install_name_tool -change libkindlecore.dylib @rpath/libkindlecore.dylib \
   "$APP/Contents/MacOS/KindleManager"
 cp "$DYLIB" "$APP/Contents/Frameworks/libkindlecore.dylib"
 
-codesign --force --deep --sign "$IDENTITY" "$APP"
+if [[ "$IDENTITY" == "-" ]]; then
+  codesign --force --deep --sign - "$APP"
+else
+  codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
+fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 file "$APP/Contents/MacOS/KindleManager" "$APP/Contents/Frameworks/libkindlecore.dylib"

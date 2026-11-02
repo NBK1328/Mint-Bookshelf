@@ -23,8 +23,8 @@ func main() {
 	sc := library.NewScanner(db)
 	if len(os.Args) >= 3 {
 		result, err := sc.ScanRoot(os.Args[2])
-		fmt.Printf("scanned %d books, added=%d updated=%d deleted=%d, err=%v\n",
-			result.Scanned, result.Added, result.Updated, result.Deleted, err)
+		fmt.Printf("scanned %d books, added=%d updated=%d moved=%d deleted=%d, err=%v\n",
+			result.Scanned, result.Added, result.Updated, result.Moved, result.Deleted, err)
 	}
 	books, _ := db.Books()
 	fmt.Printf("library has %d books\n", len(books))

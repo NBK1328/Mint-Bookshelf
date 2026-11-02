@@ -70,3 +70,37 @@ func TestSearchUnicode(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceFoldersRoundTrip(t *testing.T) {
+	f, _ := os.CreateTemp("", "km-folders-*.db")
+	f.Close()
+	os.Remove(f.Name())
+	db, err := Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer os.Remove(f.Name())
+
+	folders := []DeviceFolder{
+		{StorageID: 7, ObjectID: 1, ParentID: 0, Name: "A"},
+		{StorageID: 7, ObjectID: 2, ParentID: 1, Name: "B"},
+	}
+	if err := db.ReplaceDeviceFolders("serial", folders); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.DeviceFolders("serial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("folders = %+v", got)
+	}
+	if err := db.ReplaceDeviceFolders("serial", folders[:1]); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = db.DeviceFolders("serial")
+	if len(got) != 1 || got[0].Name != "A" {
+		t.Fatalf("folders after replace = %+v", got)
+	}
+}

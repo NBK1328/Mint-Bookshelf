@@ -31,6 +31,8 @@ const char *KM_DeviceGetList(void);
 const char *KM_DeviceGetInfo(int bus, int dev);
 int KM_DeviceIsConnected(void);
 const char *KM_DeviceListBooks(void);
+const char *KM_DeviceTransferProgress(void);
+const char *KM_DeviceCancelTransfer(void);
 const char *KM_DeviceUploadBook(const char *localPath, uint32_t parentID, uint32_t storageID);
 const char *KM_DeviceDownloadBook(uint32_t objectID, const char *localPath);
 const char *KM_DeviceDeleteBook(uint32_t objectID);
