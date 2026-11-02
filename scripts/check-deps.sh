@@ -26,6 +26,18 @@ fi
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "missing Xcode command line tools" >&2
   failed=1
+else
+  dev_dir="${DEVELOPER_DIR:-}"
+  if [[ -z "$dev_dir" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+    dev_dir=/Applications/Xcode.app/Contents/Developer
+  fi
+  if [[ -z "$dev_dir" ]]; then
+    dev_dir="$(xcode-select -p)"
+  fi
+  if ! DEVELOPER_DIR="$dev_dir" xcodebuild -version >/dev/null 2>&1; then
+    echo "Xcode is not selected; run: sudo xcode-select -s /Applications/Xcode.app" >&2
+    failed=1
+  fi
 fi
 
 if [[ -d /Applications/calibre.app ]] || command -v ebook-convert >/dev/null 2>&1; then

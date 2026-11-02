@@ -17,16 +17,16 @@ confirmation. MTP transfers report status but not live progress yet.
 
 ## Features
 
-- Kindle section with reconstructed folder tree
-- Upload to a chosen Kindle folder (drag & drop or file picker)
-- Download, download-to-folder and move-to-Mac
-- Copy/move objects inside the device
-- Create folders, rename and delete (with confirmation)
-- Local Finder-style browser with navigation, search, hidden files, book filter
+- Kindle section with reconstructed folder tree and device selector
+- Upload files or whole folders (drag & drop, picker, clipboard)
+- Download, download-to-folder, move-to-Mac and drag-out with on-demand download
+- Copy/move objects inside the device, recursive folder delete with confirmation
+- Local Finder-style browser with background listing, navigation, search and filters
 - Finder-compatible copy/cut/paste, drag-in and drag-out
 - Live operation queue with progress and cancel
+- Batch MTP transfer progress and cancellation between files
 - Conversion form with file pickers, format selection and queue hand-off
-- Library search and title sorting
+- Library search/sort, covers and a book details panel
 - Empty-area context menus on both file lists
 
 ## Build
@@ -45,13 +45,13 @@ troubleshooting.
 ```sh
 go test ./...
 make test-race
-cd macos && swift test
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos
 ```
 
 ## Notes
 
 - Only modern MTP Kindles are supported; USB mass-storage Kindles are not.
-- Only the first connected MTP device is opened.
+- Multiple Amazon devices are selectable; reconnect is manual.
 - Device delete is permanent and requires confirmation.
 - The app keeps one MTP session open; do not run other MTP tools concurrently.
 - `docs/` is local-only and ignored by Git.

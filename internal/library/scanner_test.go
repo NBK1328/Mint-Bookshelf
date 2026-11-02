@@ -54,3 +54,41 @@ func TestScan(t *testing.T) {
 		t.Fatalf("books after delete %d", len(books3))
 	}
 }
+
+func TestScanAbortsWithoutDeletingOnWalkError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission test does not work as root")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "b.pdf"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dbf, _ := os.CreateTemp("", "km-*.db")
+	dbf.Close()
+	os.Remove(dbf.Name())
+	db, _ := storage.Open(dbf.Name())
+	defer db.Close()
+	defer os.Remove(dbf.Name())
+	sc := NewScanner(db)
+	if _, err := sc.ScanRoot(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(locked, 0o755)
+
+	if _, err := sc.ScanRoot(dir); err == nil {
+		t.Fatal("expected walk error")
+	}
+	books, _ := db.Books()
+	if len(books) != 1 {
+		t.Fatalf("books after failed scan = %d, want 1", len(books))
+	}
+}

@@ -27,6 +27,13 @@ codesign --force --deep --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 file "$APP/Contents/MacOS/KindleManager" "$APP/Contents/Frameworks/libkindlecore.dylib"
+lipo -archs "$APP/Contents/MacOS/KindleManager" | grep -q arm64
+lipo -archs "$APP/Contents/Frameworks/libkindlecore.dylib" | grep -q arm64
 otool -L "$APP/Contents/MacOS/KindleManager" | grep -E 'KindleManager|libkindlecore' || true
+
+min_os="$(otool -l "$APP/Contents/Frameworks/libkindlecore.dylib" | awk '/LC_BUILD_VERSION/{found=1} found && /minos/{print $2; exit}')"
+if [[ -n "$min_os" && "$min_os" != "14.0" ]]; then
+  echo "warning: dylib minimum macOS is $min_os (app target is 14.0); build release artifacts on the oldest supported macOS" >&2
+fi
 
 echo "packaged $APP"

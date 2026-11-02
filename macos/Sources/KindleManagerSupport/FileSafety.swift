@@ -35,18 +35,42 @@ public enum FileSafety {
         components.map(sanitizeFileName)
     }
 
+    /// Resolves symlinks in the existing prefix even when the final path does not exist yet.
+    public static func canonicalURL(_ url: URL) -> URL {
+        let fm = FileManager.default
+        var existing = url.standardizedFileURL
+        var suffix: [String] = []
+        while !fm.fileExists(atPath: existing.path) {
+            let component = existing.lastPathComponent
+            if component.isEmpty {
+                break
+            }
+            suffix.insert(component, at: 0)
+            let parent = existing.deletingLastPathComponent()
+            if parent.path == existing.path {
+                break
+            }
+            existing = parent
+        }
+        var resolved = existing.resolvingSymlinksInPath().standardizedFileURL
+        for component in suffix {
+            resolved.appendPathComponent(component)
+        }
+        return resolved.standardizedFileURL
+    }
+
     /// Builds a destination inside `base` and rejects any result that escapes it.
     public static func safeDestination(base: URL, components: [String]) throws -> URL {
         guard !components.isEmpty else {
             throw FileSafetyError.invalidName
         }
 
-        let baseURL = base.resolvingSymlinksInPath().standardizedFileURL
+        let baseURL = canonicalURL(base)
         var target = baseURL
         for component in components {
             target.appendPathComponent(sanitizeFileName(component))
         }
-        target = target.standardizedFileURL
+        target = canonicalURL(target)
 
         let basePath = baseURL.path
         let prefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
@@ -103,9 +127,12 @@ public enum FileSafety {
                 try fm.createDirectory(at: destination, withIntermediateDirectories: false)
                 return destination
             } catch {
-                if (destinationExists(error) || fm.fileExists(atPath: destination.path)) {
+                if destinationExists(error) {
                     attempts += 1
                     continue
+                }
+                if fm.fileExists(atPath: destination.path) {
+                    try? fm.removeItem(at: destination)
                 }
                 throw error
             }
@@ -122,6 +149,28 @@ public enum FileSafety {
         return directory.appendingPathComponent(sanitizeFileName(deviceName))
     }
 
+    public static func cleanupTemporaryDownloads(olderThan age: TimeInterval = 3600) {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey]
+        guard let urls = try? fm.contentsOfDirectory(
+            at: fm.temporaryDirectory,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        let cutoff = Date().addingTimeInterval(-age)
+        for url in urls where url.lastPathComponent.hasPrefix("KindleManager-") {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isDirectory == true,
+                  let modified = values.contentModificationDate,
+                  modified < cutoff else {
+                continue
+            }
+            try? fm.removeItem(at: url)
+        }
+    }
+
     private static func transferUnique(_ source: URL, into directory: URL, move: Bool) throws -> URL {
         let fm = FileManager.default
         var attempts = 0
@@ -135,9 +184,12 @@ public enum FileSafety {
                 }
                 return destination
             } catch {
-                if (destinationExists(error) || fm.fileExists(atPath: destination.path)) {
+                if destinationExists(error) {
                     attempts += 1
                     continue
+                }
+                if fm.fileExists(atPath: destination.path) {
+                    try? fm.removeItem(at: destination)
                 }
                 throw error
             }

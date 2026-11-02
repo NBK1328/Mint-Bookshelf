@@ -47,7 +47,7 @@ func Thumbnail(src string, max int) (string, error) {
 			outImg.Set(x, y, img.At(sx, sy))
 		}
 	}
-	out := filepath.Join(CacheDir(), "thumb_"+cacheKey(src)+".png")
+	out := filepath.Join(CacheDir(), "thumb_"+cacheKeyForFile(src)+".png")
 	if _, err := os.Stat(out); err == nil {
 		return out, nil
 	}

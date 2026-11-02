@@ -12,8 +12,10 @@ test-race:
 fmt:
 	gofmt -w cmd internal
 
+DEVELOPER_DIR ?= $(shell if [ -d /Applications/Xcode.app/Contents/Developer ]; then echo /Applications/Xcode.app/Contents/Developer; else xcode-select -p; fi)
+
 build-macos:
-	cd macos && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+	cd macos && DEVELOPER_DIR="$(DEVELOPER_DIR)" swift build
 
 build-cli:
 	go build -o build/kindle-core ./cmd/kindle-core

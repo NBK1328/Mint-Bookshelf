@@ -21,294 +21,6 @@ struct KindleManagerApp: App {
     }
 }
 
-@MainActor
-class AppStore: ObservableObject {
-    @Published var books: [Book] = []
-    @Published var devices: [RawDevice] = []
-    @Published var deviceFiles: [DeviceFile] = []
-    @Published var section: String = "library"
-    @Published var convertInput: String = ""
-    @Published var convertOutput: String = ""
-    @Published var convertResult: String = ""
-    @Published var selectedBook: Book?
-    @Published var operations: [Operation] = []
-    @Published var deviceStatus: String = ""
-    @Published var deviceLoading = false
-    @Published var deviceRevision = 0
-    @Published var libraryScanning = false
-    @Published var lastError: String?
-    @Published var libraryStatus: String = ""
-
-    private let deviceQueue = DispatchQueue(label: "com.kindlemanager.device", qos: .userInitiated)
-    private let libraryQueue = DispatchQueue(label: "com.kindlemanager.library", qos: .userInitiated)
-    private var refreshInFlight = false
-
-    init() {
-        let initRaw = kmString(KM_Initialize(nil))
-        if let data = initRaw.data(using: .utf8),
-           let payload = try? JSONDecoder().decode(InitPayload.self, from: data) {
-            if !payload.ok {
-                lastError = payload.error ?? "Initialization failed"
-            }
-        } else {
-            lastError = "Initialization failed"
-        }
-        reloadBooks()
-        reloadOperations()
-        refreshDevice()
-    }
-
-    func reloadBooks() {
-        do {
-            books = try loadBooks()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func reloadOperations() {
-        do {
-            operations = try loadOperations()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func scanLibrary(_ path: String) async -> ScanResult {
-        libraryScanning = true
-        let raw = await withCheckedContinuation { continuation in
-            libraryQueue.async {
-                continuation.resume(returning: kmString(withCStr(path) { KM_LibraryScan($0) }))
-            }
-        }
-        libraryScanning = false
-
-        guard let data = raw.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(ScanPayload.self, from: data) else {
-            let message = "Scan failed: invalid response"
-            lastError = message
-            libraryStatus = message
-            return ScanResult(ok: false, added: 0, error: message)
-        }
-        guard payload.ok else {
-            let message = payload.error ?? "Scan failed"
-            lastError = message
-            libraryStatus = message
-            return ScanResult(ok: false, added: 0, error: message)
-        }
-
-        reloadBooks()
-        let added = payload.added ?? 0
-        let message = "Scanned \(payload.scanned ?? added) · added \(added) · updated \(payload.updated ?? 0) · removed \(payload.deleted ?? 0)"
-        libraryStatus = message
-        return ScanResult(ok: true, added: added, error: nil)
-    }
-
-    func cancelOperation(_ id: String) async -> String {
-        let result = await withCheckedContinuation { continuation in
-            libraryQueue.async {
-                continuation.resume(returning: kmString(withCStr(id) { KM_OperationCancel($0) }))
-            }
-        }
-        reloadOperations()
-        return result
-    }
-
-    func startConversion(input: String, output: String, format: String) async -> String {
-        let result = await withCheckedContinuation { continuation in
-            libraryQueue.async {
-                continuation.resume(returning: kmString(withCStr(input) { inputPtr in
-                    withCStr(output) { outputPtr in
-                        withCStr(format) { formatPtr in
-                            KM_ConvertBook(inputPtr, outputPtr, formatPtr)
-                        }
-                    }
-                }))
-            }
-        }
-        reloadOperations()
-        return result
-    }
-
-    func refreshDevice() {
-        guard !refreshInFlight else { return }
-        refreshInFlight = true
-        deviceLoading = true
-        Task {
-            let loaded = await runOnDeviceQueue { loadDevicesResult() }
-            if let error = loaded.error {
-                devices = []
-                deviceFiles = []
-                deviceStatus = "Discovery failed: \(error)"
-                lastError = error
-                deviceLoading = false
-                refreshInFlight = false
-                return
-            }
-
-            let kindleDevices = loaded.devices.filter { $0.vendorID == 0x1949 }
-            devices = kindleDevices
-            deviceRevision += 1
-
-            guard let device = kindleDevices.first else {
-                deviceFiles = []
-                deviceStatus = "No Kindle connected"
-                deviceLoading = false
-                refreshInFlight = false
-                return
-            }
-
-            deviceStatus = "Opening Kindle…"
-            let (files, status) = await runOnDeviceQueue {
-                AppStore.openAndListDevice(device)
-            }
-            deviceFiles = files
-            deviceStatus = status
-            deviceLoading = false
-            refreshInFlight = false
-            deviceRevision += 1
-        }
-    }
-
-    nonisolated private static func openAndListDevice(_ device: RawDevice) -> ([DeviceFile], String) {
-        let info = connectDevice(device)
-        guard isOK(info) else { return ([], "Connect failed: \(info)") }
-        let (files, error) = loadDeviceFilesResult()
-        if let error {
-            return (files, "Kindle connected, listing failed: \(error)")
-        }
-        return (files, "Kindle connected · \(files.count) objects")
-    }
-
-    func reloadDeviceFiles() async {
-        let (files, error) = await runOnDeviceQueue { loadDeviceFilesResult() }
-        deviceFiles = files
-        deviceRevision += 1
-        if let error {
-            deviceStatus = "Listing failed: \(error)"
-            lastError = error
-        }
-    }
-
-    private func runOnDeviceQueue<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
-        await withCheckedContinuation { continuation in
-            deviceQueue.async {
-                continuation.resume(returning: work())
-            }
-        }
-    }
-
-    func uploadDeviceFiles(_ paths: [String], parent: UInt32, storage: UInt32) async -> String {
-        await uploadDeviceFilesChecked(paths, parent: parent, storage: storage).message
-    }
-
-    func uploadDeviceFilesChecked(_ paths: [String], parent: UInt32, storage: UInt32) async -> OpResult {
-        let result = await runOnDeviceQueue { () -> OpResult in
-            var errors: [String] = []
-            for path in paths {
-                let r = kmString(withCStr(path) { KM_DeviceUploadBook($0, parent, storage) })
-                if !isOK(r) { errors.append("\(path): \(r)") }
-            }
-            return OpResult(
-                ok: errors.isEmpty,
-                message: errors.isEmpty
-                    ? "Uploaded \(paths.count) file(s) to Kindle"
-                    : errors.joined(separator: "; ")
-            )
-        }
-        await reloadDeviceFiles()
-        deviceStatus = result.message
-        return result
-    }
-
-    func downloadDeviceFile(_ id: UInt32, to path: String) async -> String {
-        let result = await runOnDeviceQueue { () -> String in
-            kmString(withCStr(path) { KM_DeviceDownloadBook(id, $0) })
-        }
-        deviceStatus = result
-        return result
-    }
-
-    func openDeviceFile(_ file: DeviceFile) async -> String {
-        let tmp: URL
-        do {
-            tmp = try FileSafety.temporaryDownloadURL(for: file.name)
-        } catch {
-            let message = "Open failed: \(error.localizedDescription)"
-            deviceStatus = message
-            return message
-        }
-        let id = file.id
-        let result = await runOnDeviceQueue { () -> String in
-            kmString(withCStr(tmp.path) { KM_DeviceDownloadBook(id, $0) })
-        }
-        if isOK(result) {
-            NSWorkspace.shared.open(tmp)
-            deviceStatus = "Opened \(file.name)"
-            return "Opened \(file.name)"
-        }
-        deviceStatus = result
-        return result
-    }
-
-    func deleteDeviceObjects(_ ids: [UInt32]) async -> String {
-        await deleteDeviceObjectsChecked(ids).message
-    }
-
-    func deleteDeviceObjectsChecked(_ ids: [UInt32]) async -> OpResult {
-        let result = await runOnDeviceQueue { () -> OpResult in
-            var errors: [String] = []
-            for id in ids {
-                let r = kmString(KM_DeviceDeleteBook(id))
-                if !isOK(r) { errors.append(r) }
-            }
-            return OpResult(
-                ok: errors.isEmpty,
-                message: errors.isEmpty ? "Deleted \(ids.count) item(s)" : errors.joined(separator: "; ")
-            )
-        }
-        await reloadDeviceFiles()
-        deviceStatus = result.message
-        return result
-    }
-
-    func moveDeviceObjects(_ ids: [UInt32], to folder: DeviceFolder, copy: Bool = false) async -> String {
-        let result = await runOnDeviceQueue { () -> String in
-            var errors: [String] = []
-            for id in ids {
-                let r = copy
-                    ? kmString(KM_DeviceCopyBook(id, folder.storageID, folder.id))
-                    : kmString(KM_DeviceMoveBook(id, folder.storageID, folder.id))
-                if !isOK(r) { errors.append(r) }
-            }
-            return errors.isEmpty
-                ? "\(copy ? "Copied" : "Moved") \(ids.count) item(s) to \(folder.label)"
-                : errors.joined(separator: "; ")
-        }
-        await reloadDeviceFiles()
-        deviceStatus = result
-        return result
-    }
-
-    func createDeviceFolder(_ name: String, parent: UInt32, storage: UInt32) async -> String {
-        let result = await runOnDeviceQueue { () -> String in
-            kmString(withCStr(name) { KM_DeviceCreateFolder($0, parent, storage) })
-        }
-        await reloadDeviceFiles()
-        deviceStatus = result
-        return result
-    }
-
-    func renameDeviceObject(_ id: UInt32, to name: String) async -> String {
-        let result = await runOnDeviceQueue { () -> String in
-            kmString(withCStr(name) { KM_DeviceRenameBook(id, $0) })
-        }
-        await reloadDeviceFiles()
-        deviceStatus = result
-        return result
-    }
-}
-
 struct APIResponse<T: Decodable>: Decodable {
     let ok: Bool
     let error: String?
@@ -320,13 +32,17 @@ struct InitPayload: Decodable {
     let error: String?
 }
 
-struct ScanPayload: Decodable {
+struct CreateFolderPayload: Decodable {
     let ok: Bool
+    let id: UInt32?
+    let error: String?
+}
+
+struct ScanData: Decodable {
     let scanned: Int?
     let added: Int?
     let updated: Int?
     let deleted: Int?
-    let error: String?
 }
 
 struct ScanResult: Sendable {
@@ -350,9 +66,17 @@ struct Book: Codable, Identifiable, Hashable {
     let id: Int64
     let title: String
     let author: String
+    let series: String?
+    let seriesIndex: Double?
+    let publisher: String?
+    let year: Int?
+    let language: String?
+    let isbn: String?
+    let description: String?
     let format: String
     let size: Int64
     let path: String?
+    let coverPath: String?
 }
 
 struct Operation: Codable, Identifiable {
@@ -395,7 +119,7 @@ struct LocalEntry: Identifiable, Hashable {
     let size: Int64
     let modified: Date?
     var id: String { path }
-    var url: URL { URL(fileURLWithPath: path) }
+    var url: URL { URL(fileURLWithPath: path, isDirectory: isDir) }
 }
 
 struct Place: Identifiable, Hashable {
@@ -517,6 +241,12 @@ func loadBooks() throws -> [Book] {
 struct DeviceLoadResult: Sendable {
     let devices: [RawDevice]
     let error: String?
+}
+
+struct FolderUploadEntry: Sendable {
+    let url: URL
+    let components: [String]
+    let isDirectory: Bool
 }
 
 func loadDevicesResult() -> DeviceLoadResult {
@@ -777,30 +507,39 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            List(filteredBooks, selection: $store.selectedBook) { book in
-                HStack {
-                    Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(book.title).font(.headline).lineLimit(1)
-                        Text("\(book.author.isEmpty ? "Unknown author" : book.author) · \(book.format.uppercased())")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    if let p = book.path {
-                        Button {
-                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
-                        } label: {
-                            Image(systemName: "folder")
+            HStack(spacing: 0) {
+                List(filteredBooks, selection: $store.selectedBook) { book in
+                    HStack(spacing: 8) {
+                        BookThumbnail(path: book.coverPath)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(book.title).font(.headline).lineLimit(1)
+                            Text("\(book.author.isEmpty ? "Unknown author" : book.author) · \(book.format.uppercased())")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
-                        .buttonStyle(.borderless)
-                        .help("Reveal in Finder")
+                        Spacer()
+                        if let p = book.path {
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
+                            } label: {
+                                Image(systemName: "folder")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Reveal in Finder")
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+                .searchable(text: $search, prompt: "Search books")
+
+                if let selected = store.selectedBook {
+                    Divider()
+                    BookDetailView(book: selected)
+                        .frame(width: 300)
+                }
             }
-            .searchable(text: $search, prompt: "Search books")
+
             if !store.libraryStatus.isEmpty {
                 Divider()
                 Text(store.libraryStatus)
@@ -821,6 +560,84 @@ struct LibraryView: View {
                 sortAscending.toggle()
             }
             Button("Reload") { store.reloadBooks() }
+        }
+    }
+}
+
+struct BookThumbnail: View {
+    let path: String?
+
+    var body: some View {
+        if let path, let image = NSImage(contentsOfFile: path) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        } else {
+            Image(systemName: "book.closed.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 44)
+        }
+    }
+}
+
+struct BookDetailView: View {
+    let book: Book
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                BookThumbnail(path: book.coverPath)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .scaleEffect(2.2)
+                    .frame(height: 120)
+
+                Text(book.title).font(.title3).bold().textSelection(.enabled)
+                Text(book.author.isEmpty ? "Unknown author" : book.author)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                if let series = book.series, !series.isEmpty {
+                    Text(series + (book.seriesIndex.map { " #\($0)" } ?? ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                    if let publisher = book.publisher, !publisher.isEmpty {
+                        GridRow { Text("Publisher").foregroundStyle(.secondary); Text(publisher) }
+                    }
+                    if let year = book.year, year > 0 {
+                        GridRow { Text("Year").foregroundStyle(.secondary); Text(String(year)) }
+                    }
+                    if let language = book.language, !language.isEmpty {
+                        GridRow { Text("Language").foregroundStyle(.secondary); Text(language) }
+                    }
+                    if let isbn = book.isbn, !isbn.isEmpty {
+                        GridRow { Text("ISBN").foregroundStyle(.secondary); Text(isbn).textSelection(.enabled) }
+                    }
+                    GridRow { Text("Format").foregroundStyle(.secondary); Text(book.format.uppercased()) }
+                    GridRow { Text("Size").foregroundStyle(.secondary); Text(byteString(book.size)) }
+                }
+                .font(.caption)
+
+                if let description = book.description, !description.isEmpty {
+                    Divider()
+                    Text(description)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                }
+
+                if let path = book.path {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -851,7 +668,7 @@ struct QueueView: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                store.reloadOperations()
+                store.reloadOperations(silent: true)
             }
         }
     }
@@ -925,9 +742,29 @@ struct ConvertView: View {
             Spacer()
         }
         .padding()
+        .onChange(of: format) { _, newFormat in
+            guard !store.convertOutput.isEmpty else { return }
+            store.convertOutput = URL(fileURLWithPath: store.convertOutput)
+                .deletingPathExtension()
+                .appendingPathExtension(newFormat)
+                .path
+        }
     }
 
     private func start() {
+        let inputURL = URL(fileURLWithPath: store.convertInput)
+        guard FileManager.default.fileExists(atPath: inputURL.path) else {
+            store.lastError = "Input file does not exist"
+            return
+        }
+        let outputURL = URL(fileURLWithPath: store.convertOutput)
+            .deletingPathExtension()
+            .appendingPathExtension(format)
+        guard FileManager.default.fileExists(atPath: outputURL.deletingLastPathComponent().path) else {
+            store.lastError = "Output folder does not exist"
+            return
+        }
+        store.convertOutput = outputURL.path
         busy = true
         let input = store.convertInput
         let output = store.convertOutput
@@ -1009,6 +846,9 @@ struct DevicesView: View {
                         }
                         .padding(.vertical, 1)
                         .tag(node.id)
+                        .onDrag {
+                            dragProvider(for: node)
+                        }
                     }
                     .listStyle(.inset)
                     .onHover { listHovered = $0 }
@@ -1103,6 +943,20 @@ struct DevicesView: View {
 
     private var actionBar: some View {
         HStack(spacing: 8) {
+            if store.devices.count > 1 {
+                Picker("Device", selection: Binding(
+                    get: { store.selectedDeviceKey ?? "" },
+                    set: { store.selectDevice($0) }
+                )) {
+                    ForEach(store.devices) { device in
+                        Text(device.product.isEmpty ? device.vendor : device.product)
+                            .tag(device.id)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 180)
+                Divider().frame(height: 20)
+            }
             Button {
                 newFolderName = "New Folder"
                 showNewFolder = true
@@ -1149,6 +1003,9 @@ struct DevicesView: View {
                 Label("Delete", systemImage: "trash")
             }
             .disabled(selection.isEmpty)
+            if store.deviceTransferActive {
+                Button("Cancel Transfer") { store.cancelDeviceTransfer() }
+            }
             Spacer()
             Button {
                 refresh()
@@ -1232,6 +1089,39 @@ struct DevicesView: View {
         Task { status = await store.openDeviceFile(f) }
     }
 
+    private func dragProvider(for node: TreeNode) -> NSItemProvider {
+        guard !node.isFolder,
+              let file = store.deviceFiles.first(where: { $0.id == node.id }) else {
+            return NSItemProvider()
+        }
+
+        let box = DeviceDragBox(store: store, file: file)
+        let ext = (file.name as NSString).pathExtension
+        let type = UTType(filenameExtension: ext)?.identifier ?? UTType.data.identifier
+        let provider = NSItemProvider()
+        provider.registerFileRepresentation(
+            forTypeIdentifier: type,
+            fileOptions: [],
+            visibility: .all
+        ) { completion in
+            Task { @MainActor in
+                do {
+                    let destination = try FileSafety.temporaryDownloadURL(for: box.file.name)
+                    let result = await box.store.downloadDeviceFile(box.file.id, to: destination.path)
+                    if isOK(result) {
+                        completion(destination, true, nil)
+                    } else {
+                        completion(nil, false, APIError.message(errorText(result)))
+                    }
+                } catch {
+                    completion(nil, false, error)
+                }
+            }
+            return nil
+        }
+        return provider
+    }
+
     private func rebuild() {
         tree = buildDeviceTree(from: store.deviceFiles)
         folders = deviceFolders(store.deviceFiles)
@@ -1288,16 +1178,30 @@ struct DevicesView: View {
     }
 
     private func dropUpload(_ urls: [URL]) -> Bool {
-        let files = urls.filter { $0.isFileURL && !$0.hasDirectoryPath }
-        guard !files.isEmpty else { return false }
+        let items = urls.filter(\.isFileURL)
+        guard !items.isEmpty else { return false }
+        let directories = items.filter(\.hasDirectoryPath)
+        let files = items.filter { !$0.hasDirectoryPath }
         let target = targetFolder
-        status = "Uploading \(files.count) file(s)…"
+        let folder = DeviceFolder(id: target.id, storageID: target.storage, label: "Kindle")
+        status = "Uploading \(items.count) item(s)…"
         Task {
-            status = await store.uploadDeviceFiles(
-                files.map(\.path),
-                parent: target.id,
-                storage: target.storage
-            )
+            var errors: [String] = []
+            for directory in directories {
+                let result = await store.uploadFolderToKindle(directory, target: folder)
+                if !result.ok { errors.append(result.message) }
+            }
+            if !files.isEmpty {
+                let result = await store.uploadDeviceFiles(
+                    files.map(\.path),
+                    parent: target.id,
+                    storage: target.storage
+                )
+                if !isOK(result) { errors.append(errorText(result)) }
+            }
+            status = errors.isEmpty
+                ? "Uploaded \(items.count) item(s)"
+                : errors.joined(separator: "; ")
         }
         return true
     }
@@ -1314,11 +1218,17 @@ struct DevicesView: View {
             status = "Nothing to download"
             return
         }
+        store.beginDeviceTransfer(total: items.count)
         status = "Downloading \(items.count) file(s)…"
         Task {
+            defer { store.finishDeviceTransfer() }
             var errors: [String] = []
             var done = 0
-            for item in items {
+            for (index, item) in items.enumerated() {
+                if store.deviceTransferCancelled {
+                    errors.append("Cancelled")
+                    break
+                }
                 let relative = item.components.joined(separator: "/")
                 let parent: URL
                 do {
@@ -1353,6 +1263,7 @@ struct DevicesView: View {
                     errors.append("\(relative): \(r)")
                 }
                 try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
+                store.deviceTransferDone = index + 1
             }
             status = errors.isEmpty
                 ? "Downloaded \(done) file(s) to \(dir.lastPathComponent)"
@@ -1377,11 +1288,17 @@ struct DevicesView: View {
         pendingLocalMove = []
         localMoveDir = nil
         guard let dir, !files.isEmpty else { return }
+        store.beginDeviceTransfer(total: files.count)
         status = "Moving \(files.count) file(s)…"
         Task {
+            defer { store.finishDeviceTransfer() }
             var downloaded: [DeviceFile] = []
             var errors: [String] = []
-            for f in files {
+            for (index, f) in files.enumerated() {
+                if store.deviceTransferCancelled {
+                    errors.append("Cancelled")
+                    break
+                }
                 let parent: URL
                 do {
                     let safe = try FileSafety.safeDestination(base: dir, components: [f.name])
@@ -1411,8 +1328,9 @@ struct DevicesView: View {
                     errors.append("\(f.name): \(r)")
                 }
                 try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
+                store.deviceTransferDone = index + 1
             }
-            if !downloaded.isEmpty {
+            if !store.deviceTransferCancelled && !downloaded.isEmpty {
                 let result = await store.deleteDeviceObjectsChecked(downloaded.map(\.id))
                 if !result.ok { errors.append(result.message) }
             }
@@ -1528,13 +1446,24 @@ struct DevicesView: View {
     private func confirmDelete(_ files: [DeviceFile]) {
         guard !files.isEmpty else { return }
 
-        let parents = Set(store.deviceFiles.map(\.parentID))
-        if files.contains(where: { $0.isFolder && parents.contains($0.id) }) {
-            status = "Folder is not empty; delete its contents first"
-            return
+        var byParent: [UInt32: [DeviceFile]] = [:]
+        for file in store.deviceFiles {
+            byParent[file.parentID, default: []].append(file)
+        }
+        var seen = Set<UInt32>()
+        var ordered: [DeviceFile] = []
+        func collect(_ file: DeviceFile) {
+            guard seen.insert(file.id).inserted else { return }
+            for child in byParent[file.id] ?? [] {
+                collect(child)
+            }
+            ordered.append(file)
+        }
+        for file in files {
+            collect(file)
         }
 
-        pendingDelete = files
+        pendingDelete = ordered
         showDelete = true
     }
 
@@ -1546,6 +1475,16 @@ struct DevicesView: View {
             status = await store.deleteDeviceObjects(ids)
             _ = count
         }
+    }
+}
+
+final class DeviceDragBox: @unchecked Sendable {
+    let store: AppStore
+    let file: DeviceFile
+
+    init(store: AppStore, file: DeviceFile) {
+        self.store = store
+        self.file = file
     }
 }
 
@@ -1599,12 +1538,14 @@ struct FilesView: View {
 
     @State private var clipboard: [URL] = []
     @State private var clipboardCut = false
+    @State private var clipboardChangeCount = -1
 
     @State private var showImporter = false
     @State private var pendingDelete: [URL] = []
     @State private var showDelete = false
     @State private var listHovered = false
 
+    @State private var reloadToken = UUID()
     @State private var showKindlePicker = false
     @State private var pendingUploadURLs: [URL] = []
     @State private var pendingUploadMove = false
@@ -1794,7 +1735,7 @@ struct FilesView: View {
                 if selection.isEmpty {
                     showImporter = true
                 } else {
-                    beginUploadToKindle(selectedEntries.filter { !$0.isDir }.map(\.url), move: false)
+                    beginUploadToKindle(selectedEntries.map(\.url), move: false)
                 }
             } label: {
                 Label("Upload to Kindle", systemImage: "arrow.up.doc")
@@ -1828,6 +1769,9 @@ struct FilesView: View {
                 Label("Delete", systemImage: "trash")
             }
             .disabled(selection.isEmpty)
+            if store.deviceTransferActive {
+                Button("Cancel Transfer") { store.cancelDeviceTransfer() }
+            }
             Spacer()
             Button {
                 reload()
@@ -1965,13 +1909,13 @@ struct FilesView: View {
                 Button("Duplicate") { duplicate(urls) }
             }
             Divider()
-            if chosen.contains(where: { !$0.isDir }) {
-                let files = chosen.filter { !$0.isDir }.map(\.url)
+            if !chosen.isEmpty {
+                let items = chosen.map(\.url)
                 Button("Upload to Kindle…") {
-                    beginUploadToKindle(files, move: false)
+                    beginUploadToKindle(items, move: false)
                 }
                 Button("Move to Kindle…") {
-                    beginUploadToKindle(files, move: true)
+                    beginUploadToKindle(items, move: true)
                 }
             }
             Button("Copy Path") { copyPath(urls) }
@@ -1994,9 +1938,22 @@ struct FilesView: View {
     }
 
     private func reload() {
-        entries = listLocal(currentURL, showHidden: showHidden)
-        let valid = Set(entries.map(\.path))
-        selection = selection.intersection(valid)
+        let token = UUID()
+        reloadToken = token
+        let directory = currentURL
+        let hidden = showHidden
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                listLocal(directory, showHidden: hidden)
+            }.value
+            guard token == reloadToken,
+                  directory.standardizedFileURL.path == currentURL.standardizedFileURL.path else {
+                return
+            }
+            entries = loaded
+            let valid = Set(loaded.map(\.path))
+            selection = selection.intersection(valid)
+        }
     }
 
     private func go(_ url: URL) {
@@ -2037,6 +1994,7 @@ struct FilesView: View {
         clipboard = urls
         clipboardCut = false
         writeFileURLsToPasteboard(urls, cut: false)
+        clipboardChangeCount = NSPasteboard.general.changeCount
         status = "Copied \(urls.count) item(s)"
     }
 
@@ -2046,6 +2004,7 @@ struct FilesView: View {
         clipboard = urls
         clipboardCut = true
         writeFileURLsToPasteboard(urls, cut: true)
+        clipboardChangeCount = NSPasteboard.general.changeCount
         status = "Cut \(urls.count) item(s)"
     }
 
@@ -2056,11 +2015,19 @@ struct FilesView: View {
 
     private func paste(into destination: URL? = nil) {
         let dest = destination ?? currentURL
+        let pasteboard = NSPasteboard.general
+        let changeCount = pasteboard.changeCount
         var sources = pasteboardFileURLs()
         var moving = pasteboardIsCut()
+        var fromInternal = false
         if sources.isEmpty {
+            guard clipboardChangeCount == changeCount else {
+                status = "Clipboard has no files"
+                return
+            }
             sources = clipboard
             moving = clipboardCut
+            fromInternal = true
         }
         guard !sources.isEmpty else {
             status = "Clipboard has no files"
@@ -2069,9 +2036,15 @@ struct FilesView: View {
         Task {
             let result = await performTransfer(sources, to: dest, copy: !moving)
             if moving && result.ok {
-                clipboard = []
-                clipboardCut = false
-                NSPasteboard.general.clearContents()
+                let unchanged = fromInternal || NSPasteboard.general.changeCount == changeCount
+                if unchanged {
+                    clipboard = []
+                    clipboardCut = false
+                    clipboardChangeCount = -1
+                    if !fromInternal {
+                        NSPasteboard.general.clearContents()
+                    }
+                }
             }
         }
     }
@@ -2184,12 +2157,12 @@ struct FilesView: View {
     }
 
     private func beginUploadToKindle(_ urls: [URL], move: Bool) {
-        let files = urls.filter { $0.isFileURL && !$0.hasDirectoryPath }
-        guard !files.isEmpty else {
-            status = "Select file(s) to upload"
+        let items = urls.filter(\.isFileURL)
+        guard !items.isEmpty else {
+            status = "Select file(s) or folder(s) to upload"
             return
         }
-        pendingUploadURLs = files
+        pendingUploadURLs = items
         pendingUploadMove = move
         status = move ? "Choose a Kindle folder to move to" : "Choose a Kindle folder to upload to"
         showKindlePicker = true
@@ -2212,25 +2185,44 @@ struct FilesView: View {
         pendingUploadURLs = []
         pendingKindleTarget = nil
         guard !urls.isEmpty else { return }
-        let paths = urls.map(\.path)
+        let directories = urls.filter(\.hasDirectoryPath)
+        let files = urls.filter { !$0.hasDirectoryPath }
         let count = urls.count
-        status = "Uploading \(count) file(s)…"
+        status = "Uploading \(count) item(s)…"
         Task {
-            let result = await store.uploadDeviceFilesChecked(
-                paths,
-                parent: target.id,
-                storage: target.storageID
-            )
-            if move && result.ok {
+            var errors: [String] = []
+
+            for directory in directories {
+                let result = await store.uploadFolderToKindle(directory, target: target)
+                if !result.ok {
+                    errors.append(result.message)
+                }
+            }
+
+            if !files.isEmpty {
+                let result = await store.uploadDeviceFilesChecked(
+                    files.map(\.path),
+                    parent: target.id,
+                    storage: target.storageID
+                )
+                if !result.ok {
+                    errors.append(result.message)
+                }
+            }
+
+            if move && errors.isEmpty {
                 let trash = await Task.detached(priority: .userInitiated) {
                     LocalFileService.trash(urls)
                 }.value
                 reload()
                 status = trash.errors.isEmpty
-                    ? "Moved \(trash.trashed) file(s) to Kindle"
+                    ? "Moved \(trash.trashed) item(s) to Kindle"
                     : trash.errors.joined(separator: "; ")
+            } else if errors.isEmpty {
+                reload()
+                status = "Uploaded \(count) item(s) to Kindle"
             } else {
-                status = result.message
+                status = errors.joined(separator: "; ")
             }
         }
     }

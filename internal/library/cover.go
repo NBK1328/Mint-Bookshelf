@@ -3,6 +3,7 @@ package library
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ func ExtractCovers(b *storage.Book) {
 	if ext == "" {
 		ext = ".jpg"
 	}
-	dest := filepath.Join(CacheDir(), cacheKey(b.Path)+ext)
+	dest := filepath.Join(CacheDir(), cacheKeyForBook(b)+ext)
 	if _, err := os.Stat(dest); err == nil {
 		b.CoverPath = dest
 		return
@@ -47,4 +48,15 @@ func ExtractCovers(b *storage.Book) {
 func cacheKey(p string) string {
 	sum := sha1.Sum([]byte(p))
 	return hex.EncodeToString(sum[:])
+}
+
+func cacheKeyForBook(b *storage.Book) string {
+	return cacheKey(fmt.Sprintf("%s|%d|%d", b.Path, b.Size, b.ModifiedAt.Unix()))
+}
+
+func cacheKeyForFile(path string) string {
+	if info, err := os.Stat(path); err == nil {
+		return cacheKey(fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().Unix()))
+	}
+	return cacheKey(path)
 }

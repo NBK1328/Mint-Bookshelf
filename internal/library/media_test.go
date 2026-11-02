@@ -52,3 +52,19 @@ func TestThumbnailExtremeAspect(t *testing.T) {
 		t.Fatalf("thumbnail bounds = %v", bounds)
 	}
 }
+
+func TestCacheKeyForFileChangesWithContentSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cover.jpg")
+	if err := os.WriteFile(path, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first := cacheKeyForFile(path)
+	if err := os.WriteFile(path, []byte("longer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := cacheKeyForFile(path)
+	if first == second {
+		t.Fatal("cache key did not change after file size changed")
+	}
+}

@@ -347,14 +347,48 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 	for i, f := range out {
 		index[keyFor(f.StorageID, f.ID)] = i
 	}
-	for _, f := range s.knownFolderSnapshot() {
-		key := keyFor(f.StorageID, f.ID)
-		if i, ok := index[key]; ok {
-			out[i] = f
+	for _, cached := range s.knownFolderSnapshot() {
+		key := keyFor(cached.StorageID, cached.ID)
+		if _, ok := index[key]; ok {
 			continue
 		}
+
+		m := C.LIBMTP_Get_Filemetadata(s.ptr, C.uint(cached.ID))
+		if m == nil {
+			s.forgetFolder(cached.ID)
+			continue
+		}
+		parent := uint32(m.parent_id)
+		if parent == uint32(C.LIBMTP_FILES_AND_FOLDERS_ROOT) {
+			parent = 0
+		}
+		name := ""
+		if m.filename != nil {
+			name = C.GoString(m.filename)
+		}
+		isFolder := m.filetype == C.LIBMTP_FILETYPE_FOLDER
+		st := uint32(m.storage_id)
+		if st == 0 {
+			st = cached.StorageID
+		}
+		C.LIBMTP_destroy_file_t(m)
+		if !isFolder {
+			s.forgetFolder(cached.ID)
+			continue
+		}
+
+		entry := FileEntry{
+			ID:        cached.ID,
+			ParentID:  parent,
+			StorageID: st,
+			Name:      name,
+			IsFolder:  true,
+		}
+		s.forgetFolder(cached.ID)
+		s.rememberFolder(entry)
+		key = keyFor(entry.StorageID, entry.ID)
 		index[key] = len(out)
-		out = append(out, f)
+		out = append(out, entry)
 	}
 	return out, nil
 }
@@ -408,10 +442,10 @@ func osStat(p string) (os.FileInfo, error) { return os.Stat(p) }
 func filepathBase(p string) string         { return filepath.Base(p) }
 
 type Storage struct {
-	ID          uint32
-	Total       uint64
-	Free        uint64
-	Description string
+	ID          uint32 `json:"id"`
+	Total       uint64 `json:"total"`
+	Free        uint64 `json:"free"`
+	Description string `json:"description,omitempty"`
 }
 
 func (s *Session) Storages() []Storage {

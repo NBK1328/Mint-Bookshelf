@@ -30,9 +30,11 @@ public enum LocalFileService {
 
         for source in urls {
             let source = source.standardizedFileURL
-            if source.path == destination.path { continue }
-            if destination.path.hasPrefix(source.path + "/") { continue }
-            if !copy && source.deletingLastPathComponent().path == destination.path { continue }
+            let sourceGuard = FileSafety.canonicalURL(source)
+            let destinationGuard = FileSafety.canonicalURL(destination)
+            if sourceGuard.path == destinationGuard.path { continue }
+            if destinationGuard.path.hasPrefix(sourceGuard.path + "/") { continue }
+            if !copy && sourceGuard.deletingLastPathComponent().path == destinationGuard.path { continue }
 
             do {
                 if copy {

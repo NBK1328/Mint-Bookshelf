@@ -120,13 +120,7 @@ func KM_LibraryScan(root *C.char) *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	return C.CString(mustJSON(map[string]any{
-		"ok":      true,
-		"scanned": result.Scanned,
-		"added":   result.Added,
-		"updated": result.Updated,
-		"deleted": result.Deleted,
-	}))
+	return C.CString(dataJSON(result))
 }
 
 //export KM_LibraryGetBooks
@@ -142,16 +136,6 @@ func KM_LibraryGetBooks() *C.char {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
 	return C.CString(dataJSON(books))
-}
-
-func deviceInfoJSON(info map[string]string) string {
-	out := make(map[string]any, len(info)+1)
-	out["ok"] = true
-	for k, v := range info {
-		out[k] = v
-	}
-	b, _ := json.Marshal(out)
-	return string(b)
 }
 
 //export KM_DeviceDiscover
@@ -197,8 +181,10 @@ func KM_DeviceGetInfo(bus, dev int) *C.char {
 	if currentDevice != nil && currentBus == bus && currentDev == dev {
 		info := currentDevice.Info()
 		if len(info) > 0 {
-			info["storages"] = fmt.Sprintf("%v", currentDevice.Storages())
-			return C.CString(deviceInfoJSON(info))
+			return C.CString(dataJSON(map[string]any{
+				"info":     info,
+				"storages": currentDevice.Storages(),
+			}))
 		}
 		currentDevice.Close()
 		currentDevice = nil
@@ -226,11 +212,13 @@ func KM_DeviceGetInfo(bus, dev int) *C.char {
 			currentDevice = sess
 			currentBus, currentDev = bus, dev
 			info := sess.Info()
-			info["storages"] = fmt.Sprintf("%v", sess.Storages())
 			if logger != nil {
 				logger.Info("device opened", "bus", bus, "dev", dev, "info", info)
 			}
-			return C.CString(deviceInfoJSON(info))
+			return C.CString(dataJSON(map[string]any{
+				"info":     info,
+				"storages": sess.Storages(),
+			}))
 		}
 	}
 	if logger != nil {

@@ -56,7 +56,7 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 	slog.Info("scan start", "root", root)
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			return nil

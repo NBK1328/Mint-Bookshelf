@@ -7,6 +7,8 @@ on:
 jobs:
   macos:
     runs-on: macos-14
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +43,14 @@ jobs:
 
       - name: Swift tests
         run: swift test --package-path macos
+
+      - name: Package app
+        run: make package
+
+      - name: Verify arm64 binaries
+        run: |
+          file macos/KindleManager.app/Contents/MacOS/KindleManager | grep arm64
+          file macos/KindleManager.app/Contents/Frameworks/libkindlecore.dylib | grep arm64
 
       - name: C header syntax
         run: printf '#include "kindle_manager.h"\nint main(void) { return 0; }\n' | clang -fsyntax-only -I bridge/include -x c -

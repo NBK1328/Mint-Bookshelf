@@ -204,6 +204,39 @@ final class FileSafetyTests: XCTestCase {
         )
     }
 
+    func testSafeDestinationRejectsSymlinkEscape() throws {
+        let root = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        defer {
+            try? fm.removeItem(at: root)
+            try? fm.removeItem(at: outside)
+        }
+
+        let link = root.appendingPathComponent("link", isDirectory: true)
+        try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        XCTAssertThrowsError(
+            try FileSafety.safeDestination(base: root, components: ["link", "evil.txt"])
+        ) { error in
+            XCTAssertEqual(error as? FileSafetyError, .outsideBase)
+        }
+    }
+
+    func testCleanupTemporaryDownloadsRemovesOldDirectories() throws {
+        let old = fm.temporaryDirectory.appendingPathComponent(
+            "KindleManager-Test-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fm.createDirectory(at: old, withIntermediateDirectories: true)
+        try fm.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-7200)],
+            ofItemAtPath: old.path
+        )
+
+        FileSafety.cleanupTemporaryDownloads(olderThan: 60)
+        XCTAssertFalse(fm.fileExists(atPath: old.path))
+    }
+
     func testConcurrentCopyUniqueCreatesDistinctFiles() throws {
         let root = try makeTemporaryDirectory()
         defer { try? fm.removeItem(at: root) }
