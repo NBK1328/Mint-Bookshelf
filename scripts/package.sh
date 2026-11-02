@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/macos/Mint Bookshelf.app"
-BIN="$ROOT/macos/.build/out/Products/Debug/MintBookshelf"
 DYLIB="$ROOT/build/libkindlecore.dylib"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
@@ -11,6 +10,10 @@ if [[ ! -f "$DYLIB" ]]; then
   echo "missing $DYLIB; run 'make build-core' or use 'make package'" >&2
   exit 1
 fi
+
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+BIN_DIR="$(cd "$ROOT/macos" && DEVELOPER_DIR="$DEVELOPER_DIR" swift build --show-bin-path)"
+BIN="$BIN_DIR/MintBookshelf"
 if [[ ! -f "$BIN" ]]; then
   echo "missing $BIN; run 'make build-macos' or use 'make package'" >&2
   exit 1
