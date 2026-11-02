@@ -30,12 +30,12 @@ type LibraryRoot struct {
 }
 
 type Operation struct {
-	ID        string  `json:"id"`
-	Type      string  `json:"type"`
-	Status    string  `json:"status"`
-	Title     string  `json:"title"`
-	Progress  float64 `json:"progress"`
-	StartedAt *time.Time
-	EndedAt   *time.Time
-	Error     string
+	ID        string     `json:"id"`
+	Type      string     `json:"type"`
+	Status    string     `json:"status"`
+	Title     string     `json:"title"`
+	Progress  float64    `json:"progress"`
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	Error     string     `json:"error,omitempty"`
 }

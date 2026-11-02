@@ -322,7 +322,7 @@ func KM_ConvertBook(input, output, format *C.char) *C.char {
 	if out == "" {
 		out = ""
 	}
-	id := state.ops.Submit("convert", in, func(ctx context.Context, t *operations.Task) error {
+	id, err := state.ops.Submit("convert", in, func(ctx context.Context, t *operations.Task) error {
 		return state.conv.Convert(ctx, converter.Options{Input: in, Output: out, ToFormat: formatStr}, func(line string) {
 			// parse percentage like "34% ..."
 			for i := 0; i+1 < len(line); i++ {
@@ -342,6 +342,9 @@ func KM_ConvertBook(input, output, format *C.char) *C.char {
 			}
 		})
 	})
+	if err != nil {
+		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
+	}
 	return C.CString(mustJSON(map[string]any{"ok": true, "operation": id}))
 }
 
@@ -350,12 +353,24 @@ func KM_OperationGetStatus(id *C.char) *C.char {
 	if state == nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not initialized"}))
 	}
-	t, ok := state.ops.Get(C.GoString(id))
-	if !ok {
-		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not found"}))
+	snapshot, ok := state.ops.Get(C.GoString(id))
+	if ok {
+		b, err := json.Marshal(snapshot)
+		if err != nil {
+			return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
+		}
+		return C.CString(string(b))
 	}
-	b, _ := json.Marshal(t)
-	return C.CString(string(b))
+	if state.db != nil {
+		if op, err := state.db.GetOperation(C.GoString(id)); err == nil {
+			b, err := json.Marshal(op)
+			if err != nil {
+				return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
+			}
+			return C.CString(string(b))
+		}
+	}
+	return C.CString(mustJSON(map[string]any{"ok": false, "error": "not found"}))
 }
 
 //export KM_OperationCancel

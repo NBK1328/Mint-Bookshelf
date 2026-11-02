@@ -1,14 +1,17 @@
 package converter
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 type Calibre struct {
@@ -84,36 +87,45 @@ func (c *Calibre) Convert(ctx context.Context, opts Options, onProgress func(lin
 		args = append(args, "--base-font-size", fmt.Sprintf("%d", opts.FontSize))
 	}
 	args = append(args, opts.ExtraArgs...)
+
 	cmd := exec.CommandContext(ctx, c.Path, args...)
-	// capture stdout/stderr
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe: %w", err)
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := stdout.Read(buf)
-			if n > 0 && onProgress != nil {
-				onProgress(string(buf[:n]))
-			}
-			if err != nil {
-				break
-			}
+
+	var progressMu sync.Mutex
+	emit := func(line string) {
+		if onProgress == nil {
+			return
 		}
-	}()
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := stderr.Read(buf)
-			if n > 0 && onProgress != nil {
-				onProgress(string(buf[:n]))
-			}
-			if err != nil {
-				break
-			}
+		progressMu.Lock()
+		onProgress(line)
+		progressMu.Unlock()
+	}
+
+	var readers sync.WaitGroup
+	read := func(r io.Reader) {
+		defer readers.Done()
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			emit(scanner.Text())
 		}
-	}()
-	return cmd.Wait()
+	}
+
+	readers.Add(2)
+	go read(stdout)
+	go read(stderr)
+
+	waitErr := cmd.Wait()
+	readers.Wait()
+	return waitErr
 }
