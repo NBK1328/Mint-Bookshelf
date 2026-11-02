@@ -3,7 +3,7 @@ package library
 import (
 	"strings"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func FilterBooks(books []storage.Book, query string) []storage.Book {

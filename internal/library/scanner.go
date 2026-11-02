@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 var bookExts = map[string]bool{

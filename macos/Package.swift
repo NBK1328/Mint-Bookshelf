@@ -2,20 +2,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "KindleManager",
+    name: "MintBookshelf",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "KindleManager", targets: ["KindleManager"]),
+        .executable(name: "MintBookshelf", targets: ["MintBookshelf"]),
     ],
     targets: [
         .target(
-            name: "KindleManagerSupport",
-            path: "Sources/KindleManagerSupport"
+            name: "MintBookshelfSupport",
+            path: "Sources/MintBookshelfSupport"
         ),
         .executableTarget(
-            name: "KindleManager",
-            dependencies: ["KindleManagerSupport"],
-            path: "Sources/KindleManager",
+            name: "MintBookshelf",
+            dependencies: ["MintBookshelfSupport"],
+            path: "Sources/MintBookshelf",
             linkerSettings: [
                 .unsafeFlags(["-L", "../build"]),
                 .linkedLibrary("kindlecore"),
@@ -23,9 +23,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "KindleManagerSupportTests",
-            dependencies: ["KindleManagerSupport"],
-            path: "Tests/KindleManagerSupportTests"
+            name: "MintBookshelfSupportTests",
+            dependencies: ["MintBookshelfSupport"],
+            path: "Tests/MintBookshelfSupportTests"
         ),
     ]
 )

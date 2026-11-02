@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-import KindleManagerSupport
+import MintBookshelfSupport
 
 private final class TransferResultBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -25,7 +25,7 @@ final class FileSafetyTests: XCTestCase {
 
     private func makeTemporaryDirectory() throws -> URL {
         let url = fm.temporaryDirectory.appendingPathComponent(
-            "KindleManagerTests-\(UUID().uuidString)",
+            "MintBookshelfTests-\(UUID().uuidString)",
             isDirectory: true
         )
         try fm.createDirectory(at: url, withIntermediateDirectories: true)
@@ -224,7 +224,7 @@ final class FileSafetyTests: XCTestCase {
 
     func testCleanupTemporaryDownloadsRemovesOldDirectories() throws {
         let old = fm.temporaryDirectory.appendingPathComponent(
-            "KindleManager-Test-\(UUID().uuidString)",
+            "MintBookshelf-Test-\(UUID().uuidString)",
             isDirectory: true
         )
         try fm.createDirectory(at: old, withIntermediateDirectories: true)

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func TestCoverExtraction(t *testing.T) {

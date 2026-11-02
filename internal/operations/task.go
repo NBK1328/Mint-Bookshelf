@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 
 	"github.com/google/uuid"
 )

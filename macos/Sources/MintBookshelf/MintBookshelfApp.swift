@@ -1,7 +1,7 @@
 import SwiftUI
 @preconcurrency import AppKit
 import UniformTypeIdentifiers
-import KindleManagerSupport
+import MintBookshelfSupport
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
@@ -10,11 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct KindleManagerApp: App {
+struct MintBookshelfApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = AppStore()
     var body: some Scene {
-        WindowGroup("Kindle Manager") {
+        WindowGroup("Mint Bookshelf") {
             ContentView(store: store)
         }
         .windowToolbarStyle(.unifiedCompact)
@@ -355,7 +355,7 @@ func chooseSaveURL(name: String) -> URL? {
     return panel.runModal() == .OK ? panel.url : nil
 }
 
-let kindleCutType = NSPasteboard.PasteboardType("com.kindlemanager.cut")
+let kindleCutType = NSPasteboard.PasteboardType("com.mintbookshelf.cut")
 
 func pasteboardFileURLs() -> [URL] {
     let pb = NSPasteboard.general
@@ -565,7 +565,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
             showLanguageMenu = false
         }
-        .alert("Kindle Manager", isPresented: Binding(
+        .alert("Mint Bookshelf", isPresented: Binding(
             get: { store.lastError != nil },
             set: { if !$0 { store.lastError = nil } }
         )) {

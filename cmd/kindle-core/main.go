@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kindle-manager/kindle-manager/internal/converter"
-	"github.com/kindle-manager/kindle-manager/internal/library"
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/converter"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/library"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func main() {

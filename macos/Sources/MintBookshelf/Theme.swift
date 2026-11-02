@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension Notification.Name {
-    static let dismissAppMenus = Notification.Name("KindleManager.dismissAppMenus")
+    static let dismissAppMenus = Notification.Name("MintBookshelf.dismissAppMenus")
 }
 
 enum AppPalette {

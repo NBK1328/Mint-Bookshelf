@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/macos/KindleManager.app"
+APP="$ROOT/macos/Mint Bookshelf.app"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
 if [[ "$IDENTITY" == "-" ]]; then
@@ -19,7 +19,7 @@ if [[ ! -d "$APP" ]]; then
 fi
 
 codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
-ZIP="$ROOT/build/KindleManager-notarize.zip"
+ZIP="$ROOT/build/MintBookshelf-notarize.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --wait

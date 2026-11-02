@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example v0.1.0)"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      DMG_PATH: ${{ github.workspace }}/build/MintBookshelf-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}.dmg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        run: brew install pkg-config libmtp libusb
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Swift tests
+        run: swift test --package-path macos
+
+      - name: Stamp app version
+        run: |
+          set -euo pipefail
+          version="${VERSION#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" macos/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" macos/Info.plist
+
+      - name: Build DMG
+        run: make dmg
+
+      - name: Verify DMG
+        run: |
+          set -euo pipefail
+          hdiutil verify "$DMG_PATH"
+          shasum -a 256 "$DMG_PATH" | tee "$DMG_PATH.sha256"
+          ls -lh "$DMG_PATH" "$DMG_PATH.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MintBookshelf-${{ env.VERSION }}
+          path: |
+            ${{ env.DMG_PATH }}
+            ${{ env.DMG_PATH }}.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Mint Bookshelf ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ env.DMG_PATH }}
+            ${{ env.DMG_PATH }}.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

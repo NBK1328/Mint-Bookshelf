@@ -144,7 +144,7 @@ public enum FileSafety {
     public static func temporaryDownloadURL(for deviceName: String) throws -> URL {
         let fm = FileManager.default
         let directory = fm.temporaryDirectory
-            .appendingPathComponent("KindleManager-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("MintBookshelf-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent(sanitizeFileName(deviceName))
     }
@@ -160,7 +160,8 @@ public enum FileSafety {
             return
         }
         let cutoff = Date().addingTimeInterval(-age)
-        for url in urls where url.lastPathComponent.hasPrefix("KindleManager-") {
+        for url in urls where url.lastPathComponent.hasPrefix("MintBookshelf-")
+            || url.lastPathComponent.hasPrefix("KindleManager-") {
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isDirectory == true,
                   let modified = values.contentModificationDate,

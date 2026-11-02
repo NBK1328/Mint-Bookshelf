@@ -1,4 +1,4 @@
-module github.com/kindle-manager/kindle-manager
+module github.com/mint-bookshelf/mint-bookshelf
 
 go 1.26.0
 

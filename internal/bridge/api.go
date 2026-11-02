@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,12 +19,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/kindle-manager/kindle-manager/internal/converter"
-	"github.com/kindle-manager/kindle-manager/internal/device"
-	"github.com/kindle-manager/kindle-manager/internal/filesystem"
-	"github.com/kindle-manager/kindle-manager/internal/library"
-	"github.com/kindle-manager/kindle-manager/internal/operations"
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/converter"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/device"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/filesystem"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/library"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/operations"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 type appState struct {
@@ -50,7 +51,7 @@ func KM_Initialize(dbPath *C.char) *C.char {
 	}
 	p := C.GoString(dbPath)
 	home, _ := os.UserHomeDir()
-	logDir := filepath.Join(home, "Library", "Logs", "KindleManager")
+	logDir := filepath.Join(home, "Library", "Logs", "MintBookshelf")
 	os.MkdirAll(logDir, 0o755)
 	f, _ := os.OpenFile(filepath.Join(logDir, "core.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if f != nil {
@@ -60,7 +61,8 @@ func KM_Initialize(dbPath *C.char) *C.char {
 	}
 	if p == "" {
 		d, _ := os.UserHomeDir()
-		p = filepath.Join(d, "Library", "Application Support", "KindleManager", "library.db")
+		p = filepath.Join(d, "Library", "Application Support", "MintBookshelf", "library.db")
+		migrateLegacyDatabase(p, filepath.Join(d, "Library", "Application Support", "KindleManager", "library.db"))
 	}
 	db, err := storage.Open(p)
 	if err != nil {
@@ -72,6 +74,37 @@ func KM_Initialize(dbPath *C.char) *C.char {
 	device.Init()
 	state = st
 	return C.CString(mustJSON(map[string]any{"ok": true, "db": p, "calibre": cal != nil}))
+}
+
+func migrateLegacyDatabase(newPath, legacyPath string) {
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		return
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		return
+	}
+	copyFile := func(src, dst string) {
+		in, err := os.Open(src)
+		if err != nil {
+			return
+		}
+		defer in.Close()
+		out, err := os.Create(dst)
+		if err != nil {
+			return
+		}
+		_, copyErr := io.Copy(out, in)
+		closeErr := out.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(dst)
+		}
+	}
+	copyFile(legacyPath, newPath)
+	copyFile(legacyPath+"-wal", newPath+"-wal")
+	copyFile(legacyPath+"-shm", newPath+"-shm")
 }
 
 //export KM_Shutdown

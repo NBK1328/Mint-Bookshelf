@@ -1,6 +1,6 @@
 import SwiftUI
 @preconcurrency import AppKit
-import KindleManagerSupport
+import MintBookshelfSupport
 
 @MainActor
 class AppStore: ObservableObject {
@@ -47,14 +47,34 @@ class AppStore: ObservableObject {
     @Published var deviceTransferBytesSent: UInt64 = 0
     @Published var deviceTransferBytesTotal: UInt64 = 0
 
-    private let deviceQueue = DispatchQueue(label: "com.kindlemanager.device", qos: .userInitiated)
-    private let progressQueue = DispatchQueue(label: "com.kindlemanager.progress", qos: .utility)
+    private let deviceQueue = DispatchQueue(label: "com.mintbookshelf.device", qos: .userInitiated)
+    private let progressQueue = DispatchQueue(label: "com.mintbookshelf.progress", qos: .utility)
     private var monitorTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
-    private let libraryQueue = DispatchQueue(label: "com.kindlemanager.library", qos: .userInitiated)
+    private let libraryQueue = DispatchQueue(label: "com.mintbookshelf.library", qos: .userInitiated)
     private var refreshInFlight = false
 
+    private func migrateLegacyPreferences() {
+        guard let legacy = UserDefaults(suiteName: "com.kindlemanager.app") else { return }
+        let current = UserDefaults.standard
+        if current.object(forKey: "libraryRoot") == nil,
+           let root = legacy.string(forKey: "libraryRoot") {
+            libraryRoot = root
+        }
+        if current.object(forKey: "appLanguage") == nil,
+           let raw = legacy.string(forKey: "appLanguage"),
+           let value = AppLanguage(rawValue: raw) {
+            language = value
+        }
+        if current.object(forKey: "appTheme") == nil,
+           let raw = legacy.string(forKey: "appTheme"),
+           let value = AppTheme(rawValue: raw) {
+            theme = value
+        }
+    }
+
     init() {
+        migrateLegacyPreferences()
         FileSafety.cleanupTemporaryDownloads()
         let initRaw = kmString(KM_Initialize(nil))
         if let data = initRaw.data(using: .utf8),

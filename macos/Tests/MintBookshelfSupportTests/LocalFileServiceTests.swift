@@ -1,13 +1,13 @@
 import Foundation
 import XCTest
-import KindleManagerSupport
+import MintBookshelfSupport
 
 final class LocalFileServiceTests: XCTestCase {
     private let fm = FileManager.default
 
     private func makeTemporaryDirectory() throws -> URL {
         let url = fm.temporaryDirectory.appendingPathComponent(
-            "KindleManagerLocalTests-\(UUID().uuidString)",
+            "MintBookshelfLocalTests-\(UUID().uuidString)",
             isDirectory: true
         )
         try fm.createDirectory(at: url, withIntermediateDirectories: true)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func waitForStatus(t *testing.T, m *Manager, id string, want Status) TaskSnapshot {

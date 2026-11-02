@@ -18,8 +18,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Ensure Kindle Manager is not running
-        run: pkill -f KindleManager || true
+      - name: Ensure Mint Bookshelf is not running
+        run: pkill -f MintBookshelf || true
 
       - name: Hardware detect/open/list
         run: go test -tags mtp ./internal/device -run TestDetect -v

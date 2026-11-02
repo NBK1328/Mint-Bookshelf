@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 var containerPathRE = regexp.MustCompile(`full-path\s*=\s*["']([^"']+)["']`)

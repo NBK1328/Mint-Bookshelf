@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func CacheDir() string {
 	home, _ := os.UserHomeDir()
-	d := filepath.Join(home, "Library", "Caches", "KindleManager", "covers")
+	d := filepath.Join(home, "Library", "Caches", "MintBookshelf", "covers")
 	os.MkdirAll(d, 0o755)
 	return d
 }

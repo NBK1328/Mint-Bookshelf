@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kindle-manager/kindle-manager/internal/storage"
+	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
 )
 
 func readCalibreMetadata(b *storage.Book) {
