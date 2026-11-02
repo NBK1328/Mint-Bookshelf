@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/readme-banner.svg" alt="Mint Bookshelf" width="100%">
+  <img src="assets/readme-banner.png" alt="Mint Bookshelf" width="100%">
   <h1>Mint Bookshelf</h1>
   <p><strong>Un écrin natif macOS pour votre bibliothèque et vos Kindle en USB.</strong></p>
 

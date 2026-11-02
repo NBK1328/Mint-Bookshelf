@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/readme-banner.svg" alt="Mint Bookshelf" width="100%">
+  <img src="assets/readme-banner.png" alt="Mint Bookshelf" width="100%">
   <h1>Mint Bookshelf</h1>
   <p><strong>为你的电子书库和 USB Kindle 打造的原生 macOS 应用。</strong></p>
 
