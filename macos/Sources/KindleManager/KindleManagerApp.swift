@@ -120,10 +120,11 @@ class AppStore: ObservableObject {
                 return
             }
 
-            devices = loaded.devices
+            let kindleDevices = loaded.devices.filter { $0.vendorID == 0x1949 }
+            devices = kindleDevices
             deviceRevision += 1
 
-            guard let device = loaded.devices.first else {
+            guard let device = kindleDevices.first else {
                 deviceFiles = []
                 deviceStatus = "No Kindle connected"
                 deviceLoading = false
@@ -1371,6 +1372,13 @@ struct DevicesView: View {
 
     private func confirmDelete(_ files: [DeviceFile]) {
         guard !files.isEmpty else { return }
+
+        let parents = Set(store.deviceFiles.map(\.parentID))
+        if files.contains(where: { $0.isFolder && parents.contains($0.id) }) {
+            status = "Folder is not empty; delete its contents first"
+            return
+        }
+
         pendingDelete = files
         showDelete = true
     }

@@ -5,28 +5,6 @@ package device
 #cgo LDFLAGS: -L/opt/homebrew/lib -lmtp -lusb-1.0
 #include <stdlib.h>
 #include <libmtp.h>
-#include <libusb-1.0/libusb.h>
-
-static void detachKernelDriver(int bus, int devnum) {
-	libusb_context *ctx = NULL;
-	libusb_init(&ctx);
-	libusb_device **devs;
-	ssize_t n = libusb_get_device_list(ctx, &devs);
-	for (ssize_t i = 0; i < n; i++) {
-		if (libusb_get_bus_number(devs[i]) == bus && libusb_get_device_address(devs[i]) == devnum) {
-			libusb_device_handle *h;
-			if (libusb_open(devs[i], &h) == LIBUSB_SUCCESS) {
-				if (libusb_kernel_driver_active(h, 0)) {
-					libusb_detach_kernel_driver(h, 0);
-				}
-				libusb_close(h);
-			}
-			break;
-		}
-	}
-	libusb_free_device_list(devs, 1);
-	libusb_exit(ctx);
-}
 */
 import "C"
 
@@ -34,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"unsafe"
 )
 
@@ -82,7 +61,9 @@ func Detect() ([]RawDevice, error) {
 }
 
 type Session struct {
-	ptr *C.LIBMTP_mtpdevice_t
+	ptr          *C.LIBMTP_mtpdevice_t
+	knownMu      sync.Mutex
+	knownFolders map[objectKey]FileEntry
 }
 
 func Open(dev RawDevice) (*Session, error) {
@@ -98,11 +79,12 @@ func Open(dev RawDevice) (*Session, error) {
 	for i := 0; i < int(n); i++ {
 		d := (*C.LIBMTP_raw_device_t)(unsafe.Pointer(uintptr(base) + uintptr(i)*sz))
 		if int(d.bus_location) == dev.Bus && int(d.devnum) == dev.DevNum {
+			d.device_entry.device_flags &^= 0x00000002
 			mtp := C.LIBMTP_Open_Raw_Device(d)
 			if mtp == nil {
 				return nil, fmt.Errorf("open failed")
 			}
-			return &Session{ptr: mtp}, nil
+			return &Session{ptr: mtp, knownFolders: map[objectKey]FileEntry{}}, nil
 		}
 	}
 	return nil, fmt.Errorf("device not found")
@@ -146,13 +128,68 @@ type FileEntry struct {
 	IsFolder  bool   `json:"isFolder"`
 }
 
+type objectKey struct {
+	storageID uint32
+	objectID  uint32
+}
+
+func (s *Session) rememberFolder(f FileEntry) {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	if s.knownFolders == nil {
+		s.knownFolders = map[objectKey]FileEntry{}
+	}
+	s.knownFolders[objectKey{storageID: f.StorageID, objectID: f.ID}] = f
+}
+
+func (s *Session) forgetFolder(id uint32) {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	for key := range s.knownFolders {
+		if key.objectID == id {
+			delete(s.knownFolders, key)
+		}
+	}
+}
+
+func (s *Session) updateKnownFolder(id uint32, update func(*FileEntry)) {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	var updated []FileEntry
+	for key, f := range s.knownFolders {
+		if key.objectID != id {
+			continue
+		}
+		update(&f)
+		delete(s.knownFolders, key)
+		updated = append(updated, f)
+	}
+	for _, f := range updated {
+		s.knownFolders[objectKey{storageID: f.StorageID, objectID: f.ID}] = f
+	}
+}
+
+func (s *Session) knownFolderSnapshot() []FileEntry {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	out := make([]FileEntry, 0, len(s.knownFolders))
+	for _, f := range s.knownFolders {
+		out = append(out, f)
+	}
+	return out
+}
+
 func (s *Session) ListFiles() ([]FileEntry, error) {
 	storages := s.Storages()
 
 	cached := s.ptr != nil && s.ptr.cached != 0
 
 	var out []FileEntry
-	seen := make(map[uint32]bool)
+	seen := make(map[objectKey]bool)
+
+	keyFor := func(storageID, objectID uint32) objectKey {
+		return objectKey{storageID: storageID, objectID: objectID}
+	}
 
 	var walk func(storageID, parentID uint32, depth int)
 	walk = func(storageID, parentID uint32, depth int) {
@@ -162,10 +199,15 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 		fl := C.LIBMTP_Get_Files_And_Folders(s.ptr, C.uint(storageID), C.uint(parentID))
 		for f := fl; f != nil; f = f.next {
 			id := uint32(f.item_id)
-			if seen[id] {
+			st := uint32(f.storage_id)
+			if st == 0 {
+				st = storageID
+			}
+			key := keyFor(st, id)
+			if seen[key] {
 				continue
 			}
-			seen[id] = true
+			seen[key] = true
 
 			name := ""
 			if f.filename != nil {
@@ -179,14 +221,14 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 			out = append(out, FileEntry{
 				ID:        id,
 				ParentID:  parent,
-				StorageID: uint32(f.storage_id),
+				StorageID: st,
 				Name:      name,
 				Size:      uint64(f.filesize),
 				Modified:  int64(f.modificationdate),
 				IsFolder:  isFolder,
 			})
 			if isFolder {
-				walk(storageID, id, depth+1)
+				walk(st, id, depth+1)
 			}
 		}
 		for f := fl; f != nil; {
@@ -206,17 +248,16 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 		}
 	}
 
-	// Some devices (including Kindle Scribe) are "cached" and refuse
-	// LIBMTP_Get_Files_And_Folders. Fall back to the flat file listing,
-	// which is known to work on those devices.
 	if len(out) == 0 {
 		fl := C.LIBMTP_Get_Filelisting(s.ptr)
 		for f := fl; f != nil; f = f.next {
 			id := uint32(f.item_id)
-			if seen[id] {
+			st := uint32(f.storage_id)
+			key := keyFor(st, id)
+			if seen[key] {
 				continue
 			}
-			seen[id] = true
+			seen[key] = true
 			name := ""
 			if f.filename != nil {
 				name = C.GoString(f.filename)
@@ -228,7 +269,7 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 			out = append(out, FileEntry{
 				ID:        id,
 				ParentID:  parent,
-				StorageID: uint32(f.storage_id),
+				StorageID: st,
 				Name:      name,
 				Size:      uint64(f.filesize),
 				Modified:  int64(f.modificationdate),
@@ -242,8 +283,6 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 		}
 	}
 
-	// Cached devices return files only. Reconstruct the directory tree by
-	// querying metadata for each unique parent_id (and its ancestors).
 	hasFolders := false
 	for _, f := range out {
 		if f.IsFolder {
@@ -252,15 +291,15 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 		}
 	}
 	if !hasFolders && len(out) > 0 {
-		resolved := make(map[uint32]bool)
+		resolved := make(map[objectKey]bool)
 		var folders []FileEntry
 		var resolve func(id, storageID uint32, depth int)
 		resolve = func(id, storageID uint32, depth int) {
 			if depth > 64 {
 				return
 			}
-			for id != 0 && !resolved[id] {
-				resolved[id] = true
+			for id != 0 && !resolved[keyFor(storageID, id)] {
+				resolved[keyFor(storageID, id)] = true
 				m := C.LIBMTP_Get_Filemetadata(s.ptr, C.uint(id))
 				if m == nil {
 					return
@@ -297,11 +336,26 @@ func (s *Session) ListFiles() ([]FileEntry, error) {
 			resolve(f.ParentID, f.StorageID, 0)
 		}
 		for _, f := range folders {
-			if !seen[f.ID] {
-				seen[f.ID] = true
+			key := keyFor(f.StorageID, f.ID)
+			if !seen[key] {
+				seen[key] = true
 				out = append(out, f)
 			}
 		}
+	}
+
+	index := make(map[objectKey]int, len(out))
+	for i, f := range out {
+		index[keyFor(f.StorageID, f.ID)] = i
+	}
+	for _, f := range s.knownFolderSnapshot() {
+		key := keyFor(f.StorageID, f.ID)
+		if i, ok := index[key]; ok {
+			out[i] = f
+			continue
+		}
+		index[key] = len(out)
+		out = append(out, f)
 	}
 	return out, nil
 }
@@ -347,6 +401,7 @@ func (s *Session) Delete(objectID uint32) error {
 	if ret != 0 {
 		return fmt.Errorf("delete failed: %d", int(ret))
 	}
+	s.forgetFolder(objectID)
 	return nil
 }
 
@@ -388,7 +443,7 @@ func IsConnected() bool {
 			return true
 		}
 	}
-	return len(devs) > 0
+	return false
 }
 
 func (s *Session) Download(objectID uint32, localPath string, onProgress func(sent, total uint64)) error {
@@ -408,6 +463,10 @@ func (s *Session) Move(objectID, storageID, parentID uint32) error {
 	if ret != 0 {
 		return fmt.Errorf("move failed: %d", int(ret))
 	}
+	s.updateKnownFolder(objectID, func(f *FileEntry) {
+		f.ParentID = parentID
+		f.StorageID = storageID
+	})
 	return nil
 }
 
@@ -428,6 +487,13 @@ func (s *Session) CreateFolder(name string, parentID, storageID uint32) (uint32,
 	if id == 0 {
 		return 0, fmt.Errorf("create folder failed")
 	}
+	s.rememberFolder(FileEntry{
+		ID:        uint32(id),
+		ParentID:  parentID,
+		StorageID: storageID,
+		Name:      name,
+		IsFolder:  true,
+	})
 	return uint32(id), nil
 }
 
@@ -438,5 +504,8 @@ func (s *Session) Rename(objectID uint32, newName string) error {
 	if ret != 0 {
 		return fmt.Errorf("rename failed: %d", int(ret))
 	}
+	s.updateKnownFolder(objectID, func(f *FileEntry) {
+		f.Name = newName
+	})
 	return nil
 }

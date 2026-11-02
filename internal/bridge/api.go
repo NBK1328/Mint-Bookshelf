@@ -169,6 +169,8 @@ func KM_FreeMemory(p unsafe.Pointer) {
 
 //export KM_DeviceGetList
 func KM_DeviceGetList() *C.char {
+	deviceMu.Lock()
+	defer deviceMu.Unlock()
 	device.Init()
 	devs, err := device.Detect()
 	if devs == nil {
