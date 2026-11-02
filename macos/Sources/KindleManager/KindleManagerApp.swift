@@ -673,12 +673,12 @@ enum LibrarySort: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .titleAscending: return "Title A–Z"
-        case .titleDescending: return "Title Z–A"
-        case .authorAscending: return "Author A–Z"
-        case .authorDescending: return "Author Z–A"
-        case .addedNewest: return "Date added: newest"
-        case .addedOldest: return "Date added: oldest"
+        case .titleAscending: return "Title: A–Z"
+        case .titleDescending: return "Title: Z–A"
+        case .authorAscending: return "Author: A–Z"
+        case .authorDescending: return "Author: Z–A"
+        case .addedNewest: return "Date: Newest"
+        case .addedOldest: return "Date: Oldest"
         }
     }
 }
