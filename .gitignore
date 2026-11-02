@@ -11,3 +11,17 @@ build/
 # Swift build output
 macos/.build/
 macos/Mint Bookshelf.app/
+
+# Xcode
+DerivedData/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+*.xcarchive
+
+# Packaged artifacts and secrets
+*.app
+*.dmg
+*.p12
+*.mobileprovision
+.env
