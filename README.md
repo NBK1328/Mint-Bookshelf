@@ -23,7 +23,10 @@ confirmation. MTP transfers report status but not live progress yet.
 - Copy/move objects inside the device
 - Create folders, rename and delete (with confirmation)
 - Local Finder-style browser with navigation, search, hidden files, book filter
-- Finder-compatible copy/cut/paste and drag & drop
+- Finder-compatible copy/cut/paste, drag-in and drag-out
+- Live operation queue with progress and cancel
+- Conversion form with file pickers, format selection and queue hand-off
+- Library search and title sorting
 - Empty-area context menus on both file lists
 
 ## Build

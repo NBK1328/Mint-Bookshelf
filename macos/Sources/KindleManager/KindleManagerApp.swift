@@ -104,6 +104,32 @@ class AppStore: ObservableObject {
         return ScanResult(ok: true, added: added, error: nil)
     }
 
+    func cancelOperation(_ id: String) async -> String {
+        let result = await withCheckedContinuation { continuation in
+            libraryQueue.async {
+                continuation.resume(returning: kmString(withCStr(id) { KM_OperationCancel($0) }))
+            }
+        }
+        reloadOperations()
+        return result
+    }
+
+    func startConversion(input: String, output: String, format: String) async -> String {
+        let result = await withCheckedContinuation { continuation in
+            libraryQueue.async {
+                continuation.resume(returning: kmString(withCStr(input) { inputPtr in
+                    withCStr(output) { outputPtr in
+                        withCStr(format) { formatPtr in
+                            KM_ConvertBook(inputPtr, outputPtr, formatPtr)
+                        }
+                    }
+                }))
+            }
+        }
+        reloadOperations()
+        return result
+    }
+
     func refreshDevice() {
         guard !refreshInFlight else { return }
         refreshInFlight = true
@@ -397,12 +423,6 @@ struct ImportResult: Sendable {
     let errors: [String]
 }
 
-struct LocalTransferResult: Sendable {
-    let ok: Bool
-    let succeeded: Int
-    let errors: [String]
-}
-
 @_silgen_name("KM_Initialize")
 func KM_Initialize(_ p: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_Shutdown")
@@ -437,6 +457,8 @@ func KM_DeviceListBooks() -> UnsafeMutablePointer<CChar>?
 func KM_ConvertBook(_ input: UnsafePointer<CChar>?, _ output: UnsafePointer<CChar>?, _ format: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_OperationList")
 func KM_OperationList() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("KM_OperationCancel")
+func KM_OperationCancel(_ id: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_FreeMemory")
 func KM_FreeMemory(_ p: UnsafeMutableRawPointer?)
 
@@ -460,6 +482,15 @@ func isOK(_ json: String) -> Bool {
         return false
     }
     return ok
+}
+
+func errorText(_ raw: String) -> String {
+    guard let data = raw.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let message = object["error"] as? String else {
+        return raw
+    }
+    return message
 }
 
 func decodeEnvelope<T: Decodable>(_ raw: String, as type: T.Type) throws -> T {
@@ -557,6 +588,17 @@ func chooseDirectory(prompt: String) -> URL? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = prompt
+    panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+    return panel.runModal() == .OK ? panel.url : nil
+}
+
+@MainActor
+func chooseOpenFile(prompt: String) -> URL? {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
     panel.allowsMultipleSelection = false
     panel.prompt = prompt
     panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
@@ -711,9 +753,28 @@ struct ContentView: View {
 
 struct LibraryView: View {
     @ObservedObject var store: AppStore
+    @State private var search = ""
+    @State private var sortAscending = true
+
+    private var filteredBooks: [Book] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        var list = store.books
+        if !query.isEmpty {
+            list = list.filter {
+                $0.title.localizedCaseInsensitiveContains(query)
+                    || $0.author.localizedCaseInsensitiveContains(query)
+                    || $0.format.localizedCaseInsensitiveContains(query)
+            }
+        }
+        return list.sorted {
+            let result = $0.title.localizedCaseInsensitiveCompare($1.title)
+            return sortAscending ? result == .orderedAscending : result == .orderedDescending
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            List(store.books, selection: $store.selectedBook) { book in
+            List(filteredBooks, selection: $store.selectedBook) { book in
                 HStack {
                     Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
@@ -736,6 +797,7 @@ struct LibraryView: View {
                 }
                 .padding(.vertical, 2)
             }
+            .searchable(text: $search, prompt: "Search books")
             if !store.libraryStatus.isEmpty {
                 Divider()
                 Text(store.libraryStatus)
@@ -752,6 +814,9 @@ struct LibraryView: View {
                 Task { _ = await store.scanLibrary(url.path) }
             }
             .disabled(store.libraryScanning)
+            Button(sortAscending ? "Sort A–Z" : "Sort Z–A") {
+                sortAscending.toggle()
+            }
             Button("Reload") { store.reloadBooks() }
         }
     }
@@ -761,32 +826,124 @@ struct QueueView: View {
     @ObservedObject var store: AppStore
     var body: some View {
         List(store.operations) { op in
-            VStack(alignment: .leading) {
-                Text(op.title).font(.headline)
-                Text("\(op.type) · \(op.status) · \(Int(op.progress * 100))%").font(.caption)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(op.title).font(.headline)
+                    Text("\(op.type) · \(op.status) · \(Int(op.progress * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if op.status == "pending" || op.status == "running" {
+                    Button("Cancel") {
+                        Task { _ = await store.cancelOperation(op.id) }
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
         }
         .toolbar {
             Button("Refresh") { store.reloadOperations() }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                store.reloadOperations()
+            }
         }
     }
 }
 
 struct ConvertView: View {
     @ObservedObject var store: AppStore
+    @State private var format = "azw3"
+    @State private var busy = false
+
+    private let formats = ["azw3", "epub", "mobi", "pdf", "txt"]
+
     var body: some View {
-        VStack(spacing: 12) {
-            TextField("Input path", text: $store.convertInput)
-            TextField("Output path", text: $store.convertOutput)
-            Button("Convert to AZW3") {
-                store.convertResult = kmString(withCStr(store.convertInput) { inp in
-                    withCStr(store.convertOutput) { out in
-                        withCStr("azw3") { fmt in KM_ConvertBook(inp, out, fmt) }
+        VStack(alignment: .leading, spacing: 12) {
+            GroupBox("Input") {
+                HStack {
+                    Text(store.convertInput.isEmpty ? "No file selected" : store.convertInput)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Choose…") {
+                        guard let url = chooseOpenFile(prompt: "Input") else { return }
+                        store.convertInput = url.path
+                        if store.convertOutput.isEmpty {
+                            store.convertOutput = url
+                                .deletingPathExtension()
+                                .appendingPathExtension(format)
+                                .path
+                        }
+                        store.convertResult = ""
                     }
-                })
+                }
             }
-            Text(store.convertResult).font(.caption)
-        }.padding()
+
+            GroupBox("Output") {
+                HStack {
+                    Text(store.convertOutput.isEmpty ? "No output selected" : store.convertOutput)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("Choose…") {
+                        let base = store.convertInput.isEmpty
+                            ? "book"
+                            : URL(fileURLWithPath: store.convertInput).deletingPathExtension().lastPathComponent
+                        guard let url = chooseSaveURL(name: "\(base).\(format)") else { return }
+                        store.convertOutput = url.path
+                    }
+                }
+            }
+
+            Picker("Format", selection: $format) {
+                ForEach(formats, id: \.self) { value in
+                    Text(value.uppercased()).tag(value)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            HStack {
+                Button("Convert") { start() }
+                    .disabled(busy || store.convertInput.isEmpty || store.convertOutput.isEmpty)
+                if busy {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+            }
+
+            if !store.convertResult.isEmpty {
+                Text(store.convertResult)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+        }
+        .padding()
+    }
+
+    private func start() {
+        busy = true
+        let input = store.convertInput
+        let output = store.convertOutput
+        let selectedFormat = format
+        Task {
+            let result = await store.startConversion(
+                input: input,
+                output: output,
+                format: selectedFormat
+            )
+            busy = false
+            if isOK(result) {
+                store.convertResult = "Conversion queued"
+                store.section = "queue"
+            } else {
+                store.convertResult = result
+                store.lastError = errorText(result)
+            }
+        }
     }
 }
 
@@ -867,9 +1024,6 @@ struct DevicesView: View {
                             .padding()
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                     }
-                }
-                .contextMenu {
-                    deviceMenu(ids: [])
                 }
             }
             Divider()
@@ -1117,15 +1271,13 @@ struct DevicesView: View {
                 storage: target.storage
             )
             if result.ok && moving {
-                var trashed = 0
-                for url in urls {
-                    do {
-                        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-                        trashed += 1
-                    } catch {}
-                }
+                let trash = await Task.detached(priority: .userInitiated) {
+                    LocalFileService.trash(urls)
+                }.value
                 NSPasteboard.general.clearContents()
-                status = "Moved \(trashed) file(s) to Kindle"
+                status = trash.errors.isEmpty
+                    ? "Moved \(trash.trashed) file(s) to Kindle"
+                    : trash.errors.joined(separator: "; ")
             } else {
                 status = result.message
             }
@@ -1516,9 +1668,6 @@ struct FilesView: View {
                 statusBar
             }
             .frame(minWidth: 520)
-            .contextMenu {
-                localMenu(ids: [])
-            }
         }
         .onAppear { reload() }
         .onChange(of: showHidden) { _, _ in reload() }
@@ -1718,6 +1867,9 @@ struct FilesView: View {
                 }
                 .padding(.vertical, 1)
                 .tag(entry.path)
+                .onDrag {
+                    NSItemProvider(contentsOf: entry.url) ?? NSItemProvider(object: entry.url as NSURL)
+                }
             }
         }
         .listStyle(.inset)
@@ -1911,22 +2063,24 @@ struct FilesView: View {
             status = "Clipboard has no files"
             return
         }
-        let result = performTransfer(sources, to: dest, copy: !moving)
-        if moving && result.ok {
-            clipboard = []
-            clipboardCut = false
-            NSPasteboard.general.clearContents()
+        Task {
+            let result = await performTransfer(sources, to: dest, copy: !moving)
+            if moving && result.ok {
+                clipboard = []
+                clipboardCut = false
+                NSPasteboard.general.clearContents()
+            }
         }
     }
 
     private func moveTo(_ urls: [URL]) {
         guard let dest = chooseDirectory(prompt: "Move") else { return }
-        _ = performTransfer(urls, to: dest, copy: false)
+        Task { _ = await performTransfer(urls, to: dest, copy: false) }
     }
 
     private func copyTo(_ urls: [URL]) {
         guard let dest = chooseDirectory(prompt: "Copy") else { return }
-        _ = performTransfer(urls, to: dest, copy: true)
+        Task { _ = await performTransfer(urls, to: dest, copy: true) }
     }
 
     private func moveSelectionTo() {
@@ -1935,40 +2089,22 @@ struct FilesView: View {
     }
 
     private func duplicate(_ urls: [URL]) {
-        _ = performTransfer(urls, to: currentURL, copy: true)
+        Task { _ = await performTransfer(urls, to: currentURL, copy: true) }
     }
 
     @discardableResult
-    private func performTransfer(_ urls: [URL], to destDir: URL, copy: Bool) -> LocalTransferResult {
-        let destStandard = destDir.standardizedFileURL
-        var succeeded = 0
-        var errors: [String] = []
-
-        for src in urls {
-            let srcStandard = src.standardizedFileURL
-            if srcStandard.path == destStandard.path { continue }
-            if destStandard.path.hasPrefix(srcStandard.path + "/") { continue }
-            if !copy && srcStandard.deletingLastPathComponent().path == destStandard.path { continue }
-
-            do {
-                if copy {
-                    _ = try FileSafety.copyUnique(srcStandard, into: destStandard)
-                } else {
-                    _ = try FileSafety.moveUnique(srcStandard, into: destStandard)
-                }
-                succeeded += 1
-            } catch {
-                errors.append("\(src.lastPathComponent): \(error.localizedDescription)")
-            }
-        }
+    private func performTransfer(_ urls: [URL], to destDir: URL, copy: Bool) async -> LocalTransferResult {
+        let result = await Task.detached(priority: .userInitiated) {
+            LocalFileService.transfer(urls, to: destDir, copy: copy)
+        }.value
 
         reload()
-        if errors.isEmpty {
-            status = "\(copy ? "Copied" : "Moved") \(succeeded) item(s) to \(destStandard.lastPathComponent)"
+        if result.ok {
+            status = "\(copy ? "Copied" : "Moved") \(result.succeeded) item(s) to \(destDir.lastPathComponent)"
         } else {
-            status = errors.joined(separator: "; ")
+            status = result.errors.joined(separator: "; ")
         }
-        return LocalTransferResult(ok: errors.isEmpty, succeeded: succeeded, errors: errors)
+        return result
     }
 
     private func confirmDelete(_ urls: [URL]) {
@@ -1978,18 +2114,17 @@ struct FilesView: View {
     }
 
     private func performDelete() {
-        var errors: [String] = []
-        for url in pendingDelete {
-            do {
-                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            } catch {
-                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
-            }
-        }
-        let count = pendingDelete.count
+        let urls = pendingDelete
         pendingDelete = []
-        reload()
-        status = errors.isEmpty ? "Moved \(count) item(s) to Trash" : errors.joined(separator: "; ")
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                LocalFileService.trash(urls)
+            }.value
+            reload()
+            status = result.errors.isEmpty
+                ? "Moved \(result.trashed) item(s) to Trash"
+                : result.errors.joined(separator: "; ")
+        }
     }
 
     private func beginRename(_ url: URL) {
@@ -2084,15 +2219,13 @@ struct FilesView: View {
                 storage: target.storageID
             )
             if move && result.ok {
-                var trashed = 0
-                for url in urls {
-                    do {
-                        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-                        trashed += 1
-                    } catch {}
-                }
+                let trash = await Task.detached(priority: .userInitiated) {
+                    LocalFileService.trash(urls)
+                }.value
                 reload()
-                status = "Moved \(trashed) file(s) to Kindle"
+                status = trash.errors.isEmpty
+                    ? "Moved \(trash.trashed) file(s) to Kindle"
+                    : trash.errors.joined(separator: "; ")
             } else {
                 status = result.message
             }

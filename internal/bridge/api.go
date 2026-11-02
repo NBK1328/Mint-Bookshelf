@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
@@ -458,12 +459,54 @@ func KM_DeviceIsConnected() C.int {
 	return 0
 }
 
+func operationList() ([]storage.Operation, error) {
+	byID := map[string]storage.Operation{}
+	if state.db != nil {
+		ops, err := state.db.ListOperations()
+		if err != nil {
+			return nil, err
+		}
+		for _, op := range ops {
+			byID[op.ID] = op
+		}
+	}
+	if state.ops != nil {
+		for _, task := range state.ops.List() {
+			byID[task.ID] = storage.Operation{
+				ID:        task.ID,
+				Type:      task.Type,
+				Status:    string(task.Status),
+				Title:     task.Title,
+				Progress:  task.Progress,
+				StartedAt: task.StartedAt,
+				EndedAt:   task.EndedAt,
+				Error:     task.Error,
+			}
+		}
+	}
+	out := make([]storage.Operation, 0, len(byID))
+	for _, op := range byID {
+		out = append(out, op)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].StartedAt, out[j].StartedAt
+		if a == nil {
+			return false
+		}
+		if b == nil {
+			return true
+		}
+		return a.After(*b)
+	})
+	return out, nil
+}
+
 //export KM_OperationList
 func KM_OperationList() *C.char {
 	if state == nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not initialized"}))
 	}
-	ops, err := state.db.ListOperations()
+	ops, err := operationList()
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
