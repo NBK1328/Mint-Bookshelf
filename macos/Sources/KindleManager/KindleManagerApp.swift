@@ -512,6 +512,9 @@ struct ContentView: View {
                     }
                 }
             }
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible)
+            }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 10) {
                     Menu {
@@ -527,7 +530,7 @@ struct ContentView: View {
                             }
                         }
                     } label: {
-                        Image(systemName: "globe")
+                        topBarIcon("globe")
                     }
                     .help(store.t("Language"))
                     .menuStyle(.borderlessButton)
@@ -536,11 +539,12 @@ struct ContentView: View {
                     Button {
                         store.toggleTheme()
                     } label: {
-                        Image(systemName: store.theme.icon)
+                        topBarIcon(store.theme.icon)
                     }
                     .buttonStyle(.borderless)
                     .help(store.t(store.theme == .dark ? "Light theme" : "Dark theme"))
                 }
+                .padding(.trailing, 16)
             }
         }
         .toolbarBackground(AppPalette.chrome(paletteScheme), for: .windowToolbar)
@@ -554,6 +558,12 @@ struct ContentView: View {
         } message: {
             Text(store.lastError ?? "")
         }
+    }
+
+    private func topBarIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 17, weight: .medium))
+            .frame(width: 20, height: 20)
     }
 
     private func sectionButton(_ section: AppSection) -> some View {
