@@ -7,10 +7,16 @@ on:
 jobs:
   macos:
     runs-on: macos-14
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Export Xcode developer directory
+        run: echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
 
       - name: Install native dependencies
         run: brew install pkg-config libmtp libusb
@@ -47,10 +53,15 @@ jobs:
       - name: Package app
         run: make package
 
-      - name: Verify arm64 binaries
+      - name: Verify arm64 and bundled libraries
         run: |
+          set -euo pipefail
           file "macos/Mint Bookshelf.app/Contents/MacOS/MintBookshelf" | grep arm64
           file "macos/Mint Bookshelf.app/Contents/Frameworks/libkindlecore.dylib" | grep arm64
+          file "macos/Mint Bookshelf.app/Contents/Frameworks/libmtp.9.dylib" | grep arm64
+          file "macos/Mint Bookshelf.app/Contents/Frameworks/libusb-1.0.0.dylib" | grep arm64
+          ! otool -L "macos/Mint Bookshelf.app/Contents/Frameworks/libkindlecore.dylib" | grep -E '/opt/homebrew|/usr/local'
+          ! otool -L "macos/Mint Bookshelf.app/Contents/Frameworks/libmtp.9.dylib" | grep -E '/opt/homebrew|/usr/local'
 
       - name: C header syntax
         run: printf '#include "kindle_manager.h"\nint main(void) { return 0; }\n' | clang -fsyntax-only -I bridge/include -x c -

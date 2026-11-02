@@ -26,6 +26,31 @@ install_name_tool -change libkindlecore.dylib @rpath/libkindlecore.dylib \
   "$APP/Contents/MacOS/MintBookshelf"
 cp "$DYLIB" "$APP/Contents/Frameworks/libkindlecore.dylib"
 
+# Bundle the MTP libraries so the app does not depend on Homebrew being installed.
+LIBMTp_SRC="$(otool -L "$DYLIB" | awk '/libmtp.*\.dylib/ { print $1; exit }')"
+LIBUSB_SRC="$(otool -L "$DYLIB" | awk '/libusb.*\.dylib/ { print $1; exit }')"
+LIBMTp_NAME="$(basename "$LIBMTp_SRC")"
+LIBUSB_NAME="$(basename "$LIBUSB_SRC")"
+
+if [[ ! -f "$LIBMTp_SRC" || ! -f "$LIBUSB_SRC" ]]; then
+  echo "missing libmtp or libusb dylib; install libmtp and libusb" >&2
+  exit 1
+fi
+
+cp -L "$LIBMTp_SRC" "$APP/Contents/Frameworks/$LIBMTp_NAME"
+cp -L "$LIBUSB_SRC" "$APP/Contents/Frameworks/$LIBUSB_NAME"
+
+install_name_tool -id "@rpath/$LIBMTp_NAME" "$APP/Contents/Frameworks/$LIBMTp_NAME"
+install_name_tool -id "@rpath/$LIBUSB_NAME" "$APP/Contents/Frameworks/$LIBUSB_NAME"
+install_name_tool -change "$LIBUSB_SRC" "@rpath/$LIBUSB_NAME" "$APP/Contents/Frameworks/$LIBMTp_NAME"
+install_name_tool -change "$LIBMTp_SRC" "@rpath/$LIBMTp_NAME" "$APP/Contents/Frameworks/libkindlecore.dylib"
+install_name_tool -change "$LIBUSB_SRC" "@rpath/$LIBUSB_NAME" "$APP/Contents/Frameworks/libkindlecore.dylib"
+
+if otool -L "$APP/Contents/Frameworks/libkindlecore.dylib" "$APP/Contents/Frameworks/$LIBMTp_NAME" "$APP/Contents/Frameworks/$LIBUSB_NAME" | grep -E '/opt/homebrew|/usr/local'; then
+  echo "bundled dylib still references Homebrew paths" >&2
+  exit 1
+fi
+
 if [[ "$IDENTITY" == "-" ]]; then
   codesign --force --deep --sign - "$APP"
 else

@@ -63,6 +63,8 @@ O Mint Bookshelf oferece suporte a **Kindles modernos com MTP** via libmtp.
 
 A compilação atual é para **Apple Silicon** e assinada ad-hoc. Se o macOS bloquear a primeira abertura, clique com o botão direito no app e escolha **Abrir**.
 
+O DMG inclui `libmtp` e `libusb`, então o Homebrew não é necessário para executar o app.
+
 ## Compilação
 
 Requisitos: macOS 14+, Xcode, Go, Homebrew, `pkg-config`, `libmtp` e `libusb`.

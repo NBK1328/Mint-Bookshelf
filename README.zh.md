@@ -63,6 +63,8 @@ Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
 
 当前版本适用于 **Apple Silicon**，使用 ad-hoc 签名。如果 macOS 阻止首次启动，请右键点击应用并选择 **打开**。
 
+DMG 已包含 `libmtp` 和 `libusb`，运行应用无需安装 Homebrew。
+
 ## 构建
 
 需要 macOS 14+、Xcode、Go、Homebrew、`pkg-config`、`libmtp` 和 `libusb`。
