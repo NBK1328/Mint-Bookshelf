@@ -3,6 +3,10 @@ import SwiftUI
 enum AppLanguage: String, CaseIterable, Identifiable {
     case en
     case ru
+    case es
+    case pt
+    case zh
+    case fr
 
     var id: String { rawValue }
 
@@ -10,13 +14,29 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         switch self {
         case .en: return "English"
         case .ru: return "Русский"
+        case .es: return "Español"
+        case .pt: return "Português"
+        case .zh: return "中文"
+        case .fr: return "Français"
         }
     }
 
-    var locale: Locale { Locale(identifier: rawValue) }
+    var locale: Locale {
+        switch self {
+        case .zh: return Locale(identifier: "zh-Hans")
+        case .pt: return Locale(identifier: "pt-BR")
+        default: return Locale(identifier: rawValue)
+        }
+    }
 
     static var preferred: AppLanguage {
-        Locale.preferredLanguages.first?.hasPrefix("ru") == true ? .ru : .en
+        let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+        for language in allCases where language != .en {
+            if preferred.hasPrefix(language.rawValue) {
+                return language
+            }
+        }
+        return .en
     }
 }
 
@@ -40,64 +60,52 @@ func joinedErrors(_ errors: [String], _ language: AppLanguage) -> String {
 }
 
 enum L10n {
+    static let tables: [AppLanguage: [String: String]] = [
+        .ru: ru,
+        .es: es,
+        .pt: pt,
+        .zh: zh,
+        .fr: fr,
+    ]
+
+    private static let errorPrefixes = [
+        "detect failed",
+        "upload failed",
+        "delete failed",
+        "download failed",
+        "move failed",
+        "copy failed",
+        "rename failed",
+        "stdout pipe",
+        "stderr pipe",
+        "panic:",
+    ]
+
     static func text(_ key: String, _ language: AppLanguage, _ arguments: CVarArg...) -> String {
-        let format = language == .ru ? (ru[key] ?? key) : key
+        text(key, language, arguments: arguments)
+    }
+
+    static func text(_ key: String, _ language: AppLanguage, arguments: [CVarArg]) -> String {
+        let format = tables[language]?[key] ?? key
         return String(format: format, locale: language.locale, arguments: arguments)
     }
 
     static func error(_ message: String, _ language: AppLanguage) -> String {
-        guard language == .ru else { return message }
+        guard language != .en else { return message }
+        let table = tables[language] ?? [:]
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let exact: [String: String] = [
-            "not initialized": "Приложение не инициализировано",
-            "no device": "Kindle не подключён",
-            "device not found": "Kindle не найден",
-            "not found": "Не найдено",
-            "no calibre": "Calibre не найден",
-            "ebook-convert not found": "Calibre не найден",
-            "calibre not available": "Calibre недоступен",
-            "transfer cancelled": "Передача отменена",
-            "empty scan root": "Пустой путь сканирования",
-            "refusing to scan the filesystem root": "Нельзя сканировать корень файловой системы",
-            "entry not found": "Запись не найдена",
-            "create folder failed": "Не удалось создать папку",
-            "empty response": "Пустой ответ ядра",
-            "request failed": "Запрос не выполнен",
-            "missing response data": "В ответе нет данных",
-            "task function is nil": "Внутренняя ошибка операции",
-            "manager is closed": "Очередь операций закрыта",
-            "queue is full": "Очередь операций переполнена",
-            "open failed": "Не удалось открыть устройство",
-            "The file name is not valid": "Недопустимое имя файла",
-            "The destination escapes the selected folder": "Путь выходит за пределы выбранной папки",
-            "The destination is not a directory": "Назначение не является папкой",
-            "unnamed": "без названия",
-        ]
-        if let translated = exact[trimmed] {
+        if let translated = table[trimmed] {
             return translated
         }
-        let prefixes: [(String, String)] = [
-            ("detect failed", "Ошибка поиска устройства"),
-            ("upload failed", "Ошибка загрузки"),
-            ("delete failed", "Ошибка удаления"),
-            ("download failed", "Ошибка скачивания"),
-            ("move failed", "Ошибка перемещения"),
-            ("copy failed", "Ошибка копирования"),
-            ("rename failed", "Ошибка переименования"),
-            ("stdout pipe", "Ошибка Calibre"),
-            ("stderr pipe", "Ошибка Calibre"),
-            ("panic:", "Внутренняя ошибка"),
-        ]
         let lower = trimmed.lowercased()
-        for (prefix, translated) in prefixes where lower.hasPrefix(prefix) {
-            return translated + trimmed.dropFirst(prefix.count)
+        for prefix in errorPrefixes where lower.hasPrefix(prefix) {
+            if let translated = table[prefix] {
+                return translated + trimmed.dropFirst(prefix.count)
+            }
         }
         var translated = message
-        for (english, russian) in exact.sorted(by: { $0.key.count > $1.key.count }) {
-            translated = translated.replacingOccurrences(of: english, with: russian)
-        }
-        for (english, russian) in prefixes {
-            translated = translated.replacingOccurrences(of: english, with: russian)
+        for key in table.keys where key.contains(" ") && key.count > 4 {
+            translated = translated.replacingOccurrences(of: key, with: table[key] ?? key)
         }
         return translated
     }

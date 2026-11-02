@@ -779,10 +779,7 @@ struct LibraryView: View {
     }
 
     private var bookCountText: String {
-        switch store.language {
-        case .en: "Books: \(store.books.count)"
-        case .ru: "Книг: \(store.books.count)"
-        }
+        store.t("Total books: %@", String(store.books.count))
     }
 
 
@@ -875,7 +872,7 @@ struct LibraryView: View {
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
                 Text(bookCountText)
-                    .font(.caption)
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(AppPalette.secondaryText(store.theme.colorScheme))
             }
             Spacer()

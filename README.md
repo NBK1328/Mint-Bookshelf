@@ -29,8 +29,26 @@ conversion activity is shown inline with progress and cancel.
 - Library search/sort, covers and a book details panel
 - Empty-area context menus on both file lists; no redundant action bars
 - Light and dark themes with a top-bar toggle
-- English and Russian UI with a scalable per-language dictionary
+- English, Russian, Spanish, Portuguese, Chinese and French UI with per-language dictionaries
 - Freely resizable window with a drag-friendly titlebar
+
+## Localization
+
+Supported languages: English, Russian, Spanish, Portuguese, Simplified Chinese
+and French. The language is selected in the top-right menu and remembered
+between launches; by default it follows the system locale.
+
+Localization is intentionally easy to extend:
+
+1. Add a case and display name to `AppLanguage` in
+   `macos/Sources/KindleManager/Localization.swift`.
+2. Create one dictionary file, for example
+   `macos/Sources/KindleManager/Localization+German.swift`, with the same keys
+   as the existing `L10n.ru` / `L10n.es` tables.
+3. Register the dictionary in `L10n.tables`.
+
+UI strings, statuses and error messages use the shared `L10n` API, so no other
+view code needs to change. Missing keys fall back to the English source string.
 
 ## Build
 

@@ -85,7 +85,7 @@ class AppStore: ObservableObject {
     }
 
     func t(_ key: String, _ arguments: CVarArg...) -> String {
-        L10n.text(key, language, arguments)
+        L10n.text(key, language, arguments: arguments)
     }
 
     func localizedError(_ text: String) -> String {
@@ -156,12 +156,10 @@ class AppStore: ObservableObject {
             let updated = payload.updated ?? 0
             let moved = payload.moved ?? 0
             let removed = payload.deleted ?? 0
-            let message = switch language {
-            case .en:
-                "Scanned \(scanned) · added \(added) · updated \(updated) · moved \(moved) · removed \(removed)"
-            case .ru:
-                "Просканировано \(scanned) · добавлено \(added) · обновлено \(updated) · перемещено \(moved) · удалено \(removed)"
-            }
+            let message = t(
+                "Scanned %@ · added %@ · updated %@ · moved %@ · removed %@",
+                String(scanned), String(added), String(updated), String(moved), String(removed)
+            )
             libraryStatus = message
             return ScanResult(ok: true, added: added, error: nil)
         } catch {
