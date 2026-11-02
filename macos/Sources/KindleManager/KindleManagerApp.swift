@@ -3,8 +3,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 import KindleManagerSupport
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        KM_Shutdown()
+    }
+}
+
 @main
 struct KindleManagerApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = AppStore()
     var body: some Scene {
         WindowGroup {
@@ -29,31 +36,72 @@ class AppStore: ObservableObject {
     @Published var deviceLoading = false
     @Published var deviceRevision = 0
     @Published var libraryScanning = false
+    @Published var lastError: String?
+    @Published var libraryStatus: String = ""
 
     private let deviceQueue = DispatchQueue(label: "com.kindlemanager.device", qos: .userInitiated)
     private let libraryQueue = DispatchQueue(label: "com.kindlemanager.library", qos: .userInitiated)
     private var refreshInFlight = false
 
     init() {
-        _ = kmString(KM_Initialize(nil))
+        let initRaw = kmString(KM_Initialize(nil))
+        if let data = initRaw.data(using: .utf8),
+           let payload = try? JSONDecoder().decode(InitPayload.self, from: data) {
+            if !payload.ok {
+                lastError = payload.error ?? "Initialization failed"
+            }
+        } else {
+            lastError = "Initialization failed"
+        }
         reloadBooks()
         reloadOperations()
         refreshDevice()
     }
 
-    func reloadBooks() { books = loadBooks() }
-    func reloadOperations() { operations = loadOperations() }
+    func reloadBooks() {
+        do {
+            books = try loadBooks()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
 
-    func scanLibrary(_ path: String) async -> String {
+    func reloadOperations() {
+        do {
+            operations = try loadOperations()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func scanLibrary(_ path: String) async -> ScanResult {
         libraryScanning = true
-        let result = await withCheckedContinuation { continuation in
+        let raw = await withCheckedContinuation { continuation in
             libraryQueue.async {
                 continuation.resume(returning: kmString(withCStr(path) { KM_LibraryScan($0) }))
             }
         }
-        reloadBooks()
         libraryScanning = false
-        return result
+
+        guard let data = raw.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(ScanPayload.self, from: data) else {
+            let message = "Scan failed: invalid response"
+            lastError = message
+            libraryStatus = message
+            return ScanResult(ok: false, added: 0, error: message)
+        }
+        guard payload.ok else {
+            let message = payload.error ?? "Scan failed"
+            lastError = message
+            libraryStatus = message
+            return ScanResult(ok: false, added: 0, error: message)
+        }
+
+        reloadBooks()
+        let added = payload.added ?? 0
+        let message = "Added \(added) book(s)"
+        libraryStatus = message
+        return ScanResult(ok: true, added: added, error: nil)
     }
 
     func refreshDevice() {
@@ -61,11 +109,21 @@ class AppStore: ObservableObject {
         refreshInFlight = true
         deviceLoading = true
         Task {
-            let devs = await runOnDeviceQueue { loadDevices() }
-            devices = devs
+            let loaded = await runOnDeviceQueue { loadDevicesResult() }
+            if let error = loaded.error {
+                devices = []
+                deviceFiles = []
+                deviceStatus = "Discovery failed: \(error)"
+                lastError = error
+                deviceLoading = false
+                refreshInFlight = false
+                return
+            }
+
+            devices = loaded.devices
             deviceRevision += 1
 
-            guard let device = devs.first else {
+            guard let device = loaded.devices.first else {
                 deviceFiles = []
                 deviceStatus = "No Kindle connected"
                 deviceLoading = false
@@ -101,6 +159,7 @@ class AppStore: ObservableObject {
         deviceRevision += 1
         if let error {
             deviceStatus = "Listing failed: \(error)"
+            lastError = error
         }
     }
 
@@ -223,6 +282,40 @@ class AppStore: ObservableObject {
     }
 }
 
+struct APIResponse<T: Decodable>: Decodable {
+    let ok: Bool
+    let error: String?
+    let data: T?
+}
+
+struct InitPayload: Decodable {
+    let ok: Bool
+    let error: String?
+}
+
+struct ScanPayload: Decodable {
+    let ok: Bool
+    let added: Int?
+    let error: String?
+}
+
+struct ScanResult: Sendable {
+    let ok: Bool
+    let added: Int
+    let error: String?
+}
+
+enum APIError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .message(let text):
+            return text
+        }
+    }
+}
+
 struct Book: Codable, Identifiable, Hashable {
     let id: Int64
     let title: String
@@ -311,6 +404,8 @@ struct LocalTransferResult: Sendable {
 
 @_silgen_name("KM_Initialize")
 func KM_Initialize(_ p: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("KM_Shutdown")
+func KM_Shutdown()
 @_silgen_name("KM_LibraryGetBooks")
 func KM_LibraryGetBooks() -> UnsafeMutablePointer<CChar>?
 @_silgen_name("KM_LibraryScan")
@@ -358,44 +453,61 @@ func withCStr<T>(_ s: String, _ f: (UnsafePointer<CChar>) -> T) -> T {
 }
 
 func isOK(_ json: String) -> Bool {
-    json.contains("\"ok\":true") || json.contains("\"ok\": true")
+    guard let data = json.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let ok = object["ok"] as? Bool else {
+        return false
+    }
+    return ok
 }
 
-func loadBooks() -> [Book] {
-    let s = kmString(KM_LibraryGetBooks())
-    guard let data = s.data(using: .utf8) else { return [] }
-    return (try? JSONDecoder().decode([Book].self, from: data)) ?? []
+func decodeEnvelope<T: Decodable>(_ raw: String, as type: T.Type) throws -> T {
+    guard let data = raw.data(using: .utf8) else {
+        throw APIError.message("empty response")
+    }
+    let response = try JSONDecoder().decode(APIResponse<T>.self, from: data)
+    guard response.ok else {
+        throw APIError.message(response.error ?? "request failed")
+    }
+    guard let value = response.data else {
+        throw APIError.message("missing response data")
+    }
+    return value
 }
 
-func loadDevices() -> [RawDevice] {
-    let s = kmString(KM_DeviceDiscover())
-    guard let data = s.data(using: .utf8) else { return [] }
-    return (try? JSONDecoder().decode([RawDevice].self, from: data)) ?? []
+func loadBooks() throws -> [Book] {
+    try decodeEnvelope(kmString(KM_LibraryGetBooks()), as: [Book].self)
+}
+
+struct DeviceLoadResult: Sendable {
+    let devices: [RawDevice]
+    let error: String?
+}
+
+func loadDevicesResult() -> DeviceLoadResult {
+    do {
+        let devices = try decodeEnvelope(kmString(KM_DeviceDiscover()), as: [RawDevice].self)
+        return DeviceLoadResult(devices: devices, error: nil)
+    } catch {
+        return DeviceLoadResult(devices: [], error: error.localizedDescription)
+    }
 }
 
 func loadDeviceFilesResult() -> (files: [DeviceFile], error: String?) {
     let raw = kmString(KM_DeviceListBooks())
-    guard let data = raw.data(using: .utf8) else {
-        return ([], "empty response")
+    do {
+        return (try decodeEnvelope(raw, as: [DeviceFile].self), nil)
+    } catch {
+        return ([], error.localizedDescription)
     }
-    if let files = try? JSONDecoder().decode([DeviceFile].self, from: data) {
-        return (files, nil)
-    }
-    if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let error = object["error"] as? String {
-        return ([], error)
-    }
-    return ([], raw)
 }
 
 func loadDeviceFiles() -> [DeviceFile] {
     loadDeviceFilesResult().files
 }
 
-func loadOperations() -> [Operation] {
-    let s = kmString(KM_OperationList())
-    guard let data = s.data(using: .utf8) else { return [] }
-    return (try? JSONDecoder().decode([Operation].self, from: data)) ?? []
+func loadOperations() throws -> [Operation] {
+    try decodeEnvelope(kmString(KM_OperationList()), as: [Operation].self)
 }
 
 func connectDevice(_ d: RawDevice) -> String {
@@ -585,34 +697,53 @@ struct ContentView: View {
             default: QueueView(store: store)
             }
         }
+        .alert("Kindle Manager", isPresented: Binding(
+            get: { store.lastError != nil },
+            set: { if !$0 { store.lastError = nil } }
+        )) {
+            Button("OK", role: .cancel) { store.lastError = nil }
+        } message: {
+            Text(store.lastError ?? "")
+        }
     }
 }
 
 struct LibraryView: View {
     @ObservedObject var store: AppStore
     var body: some View {
-        List(store.books, selection: $store.selectedBook) { book in
-            HStack {
-                Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(book.title).font(.headline).lineLimit(1)
-                    Text("\(book.author.isEmpty ? "Unknown author" : book.author) · \(book.format.uppercased())")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                if let p = book.path {
-                    Button {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
-                    } label: {
-                        Image(systemName: "folder")
+        VStack(spacing: 0) {
+            List(store.books, selection: $store.selectedBook) { book in
+                HStack {
+                    Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(book.title).font(.headline).lineLimit(1)
+                        Text("\(book.author.isEmpty ? "Unknown author" : book.author) · \(book.format.uppercased())")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    .buttonStyle(.borderless)
-                    .help("Reveal in Finder")
+                    Spacer()
+                    if let p = book.path {
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Reveal in Finder")
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            .padding(.vertical, 2)
+            if !store.libraryStatus.isEmpty {
+                Divider()
+                Text(store.libraryStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+            }
         }
         .toolbar {
             Button("Add Folder…") {

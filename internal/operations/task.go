@@ -154,6 +154,8 @@ type Manager struct {
 	maxTracked int
 	maxPending int
 	sem        chan struct{}
+	wg         sync.WaitGroup
+	closed     bool
 }
 
 func NewManager(maxConc int, db ...*storage.DB) *Manager {
@@ -178,6 +180,10 @@ func (m *Manager) Submit(typ, title string, fn func(context.Context, *Task) erro
 	}
 
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return "", fmt.Errorf("manager is closed")
+	}
 	if m.active >= m.maxPending {
 		m.mu.Unlock()
 		return "", fmt.Errorf("queue is full")
@@ -202,6 +208,7 @@ func (m *Manager) Submit(typ, title string, fn func(context.Context, *Task) erro
 	m.tasks[id] = t
 	m.order = append(m.order, id)
 	m.active++
+	m.wg.Add(1)
 	m.mu.Unlock()
 
 	m.persist(t.Snapshot())
@@ -210,6 +217,7 @@ func (m *Manager) Submit(typ, title string, fn func(context.Context, *Task) erro
 }
 
 func (m *Manager) run(t *Task) {
+	defer m.wg.Done()
 	m.sem <- struct{}{}
 	defer func() { <-m.sem }()
 
@@ -233,6 +241,31 @@ func (m *Manager) run(t *Task) {
 	m.active--
 	m.pruneLocked()
 	m.mu.Unlock()
+}
+
+func (m *Manager) Shutdown(timeout time.Duration) bool {
+	m.mu.Lock()
+	m.closed = true
+	for _, t := range m.tasks {
+		t.cancelIfActive()
+	}
+	m.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+	if timeout <= 0 {
+		<-done
+		return true
+	}
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 func (m *Manager) Get(id string) (TaskSnapshot, bool) {

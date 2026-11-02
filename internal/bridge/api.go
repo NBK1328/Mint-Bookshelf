@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/kindle-manager/kindle-manager/internal/converter"
@@ -33,19 +34,25 @@ type appState struct {
 
 var state *appState
 var logger *slog.Logger
+var logFile *os.File
 var currentDevice *device.Session
 var currentBus, currentDev int
 var deviceMu sync.Mutex
 
 //export KM_Initialize
 func KM_Initialize(dbPath *C.char) *C.char {
+	if state != nil {
+		shutdown()
+	}
 	p := C.GoString(dbPath)
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, "Library", "Logs", "KindleManager")
 	os.MkdirAll(logDir, 0o755)
 	f, _ := os.OpenFile(filepath.Join(logDir, "core.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if f != nil {
+		logFile = f
 		logger = slog.New(slog.NewTextHandler(f, nil))
+		slog.SetDefault(logger)
 	}
 	if p == "" {
 		d, _ := os.UserHomeDir()
@@ -53,6 +60,7 @@ func KM_Initialize(dbPath *C.char) *C.char {
 	}
 	db, err := storage.Open(p)
 	if err != nil {
+		shutdown()
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
 	cal, _ := converter.DetectCalibre()
@@ -64,10 +72,37 @@ func KM_Initialize(dbPath *C.char) *C.char {
 
 //export KM_Shutdown
 func KM_Shutdown() {
-	if state != nil && state.db != nil {
-		state.db.Close()
+	shutdown()
+}
+
+func shutdown() {
+	allDone := true
+	if state != nil {
+		if state.ops != nil {
+			allDone = state.ops.Shutdown(5 * time.Second)
+		}
 	}
-	state = nil
+	if !allDone && logger != nil {
+		logger.Warn("shutdown timed out waiting for operations")
+	}
+	deviceMu.Lock()
+	if currentDevice != nil {
+		currentDevice.Close()
+		currentDevice = nil
+	}
+	currentBus, currentDev = 0, 0
+	deviceMu.Unlock()
+	if state != nil {
+		if state.db != nil && allDone {
+			state.db.Close()
+		}
+		state = nil
+	}
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+	logger = nil
 }
 
 //export KM_GetVersion
@@ -90,7 +125,7 @@ func KM_LibraryScan(root *C.char) *C.char {
 //export KM_LibraryGetBooks
 func KM_LibraryGetBooks() *C.char {
 	if state == nil {
-		return C.CString("[]")
+		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not initialized"}))
 	}
 	books, err := state.db.Books()
 	if books == nil {
@@ -99,8 +134,7 @@ func KM_LibraryGetBooks() *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	b, _ := json.Marshal(books)
-	return C.CString(string(b))
+	return C.CString(dataJSON(books))
 }
 
 func deviceInfoJSON(info map[string]string) string {
@@ -125,13 +159,7 @@ func KM_DeviceDiscover() *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	b, _ := json.Marshal(devs)
-	return C.CString(string(b))
-}
-
-//export KM_GetLastError
-func KM_GetLastError() *C.char {
-	return C.CString("")
+	return C.CString(dataJSON(devs))
 }
 
 //export KM_FreeMemory
@@ -149,8 +177,7 @@ func KM_DeviceGetList() *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	b, _ := json.Marshal(devs)
-	return C.CString(string(b))
+	return C.CString(dataJSON(devs))
 }
 
 //export KM_DeviceGetInfo
@@ -230,8 +257,7 @@ func KM_DeviceListBooks() *C.char {
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	b, _ := json.Marshal(files)
-	return C.CString(string(b))
+	return C.CString(dataJSON(files))
 }
 
 //export KM_DeviceUploadBook
@@ -355,19 +381,11 @@ func KM_OperationGetStatus(id *C.char) *C.char {
 	}
 	snapshot, ok := state.ops.Get(C.GoString(id))
 	if ok {
-		b, err := json.Marshal(snapshot)
-		if err != nil {
-			return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
-		}
-		return C.CString(string(b))
+		return C.CString(dataJSON(snapshot))
 	}
 	if state.db != nil {
 		if op, err := state.db.GetOperation(C.GoString(id)); err == nil {
-			b, err := json.Marshal(op)
-			if err != nil {
-				return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
-			}
-			return C.CString(string(b))
+			return C.CString(dataJSON(op))
 		}
 	}
 	return C.CString(mustJSON(map[string]any{"ok": false, "error": "not found"}))
@@ -391,8 +409,7 @@ func KM_FilesystemList(path *C.char) *C.char {
 	if entries == nil {
 		entries = []filesystem.Entry{}
 	}
-	b, _ := json.Marshal(entries)
-	return C.CString(string(b))
+	return C.CString(dataJSON(entries))
 }
 
 //export KM_SettingGet
@@ -423,8 +440,7 @@ func KM_LibraryGetBook(id int64) *C.char {
 	books, _ := state.db.Books()
 	for _, b := range books {
 		if b.ID == id {
-			out, _ := json.Marshal(b)
-			return C.CString(string(out))
+			return C.CString(dataJSON(b))
 		}
 	}
 	return C.CString(mustJSON(map[string]any{"ok": false, "error": "not found"}))
@@ -443,14 +459,13 @@ func KM_DeviceIsConnected() C.int {
 //export KM_OperationList
 func KM_OperationList() *C.char {
 	if state == nil {
-		return C.CString("[]")
+		return C.CString(mustJSON(map[string]any{"ok": false, "error": "not initialized"}))
 	}
 	ops, err := state.db.ListOperations()
 	if err != nil {
 		return C.CString(mustJSON(map[string]any{"ok": false, "error": err.Error()}))
 	}
-	b, _ := json.Marshal(ops)
-	return C.CString(string(b))
+	return C.CString(dataJSON(ops))
 }
 
 //export KM_DeviceMoveBook
@@ -543,5 +558,10 @@ func main() {}
 
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func dataJSON(v any) string {
+	b, _ := json.Marshal(map[string]any{"ok": true, "data": v})
 	return string(b)
 }

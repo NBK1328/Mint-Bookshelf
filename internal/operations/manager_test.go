@@ -197,3 +197,23 @@ func waitForStoredStatus(t *testing.T, db *storage.DB, id, want string) {
 	op, err := db.GetOperation(id)
 	t.Fatalf("stored status = %+v, err = %v, want %s", op, err, want)
 }
+
+func TestManagerShutdown(t *testing.T) {
+	m := NewManager(1)
+	id, err := m.Submit("test", "shutdown", func(ctx context.Context, task *Task) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m.Shutdown(2 * time.Second)
+	waitForStatus(t, m, id, StatusCancelled)
+
+	if _, err := m.Submit("test", "after", func(ctx context.Context, task *Task) error {
+		return nil
+	}); err == nil {
+		t.Fatal("expected submit after shutdown to fail")
+	}
+}
