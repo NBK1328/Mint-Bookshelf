@@ -63,8 +63,6 @@
 
 Текущая сборка предназначена для **Apple Silicon** и подписана ad-hoc. Если macOS блокирует первый запуск, нажмите на приложение правой кнопкой и выберите **Открыть**.
 
-Для публичного распространения без предупреждений Gatekeeper используйте Developer ID и notarization. См. `docs/BUILD.md`.
-
 ## Сборка
 
 Требуются macOS 14+, Xcode, Go, Homebrew, `pkg-config`, `libmtp` и `libusb`.

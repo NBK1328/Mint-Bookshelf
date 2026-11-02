@@ -63,8 +63,6 @@ Mint Bookshelf usa **Kindle modernos con MTP** mediante libmtp.
 
 La compilación actual es para **Apple Silicon** y está firmada ad-hoc. Si macOS bloquea el primer inicio, haz clic derecho en la app y elige **Abrir**.
 
-Para distribuir sin avisos de Gatekeeper, usa un certificado Developer ID y notarización. Consulta `docs/BUILD.md`.
-
 ## Compilación
 
 Requisitos: macOS 14+, Xcode, Go, Homebrew, `pkg-config`, `libmtp` y `libusb`.

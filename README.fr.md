@@ -63,8 +63,6 @@ Mint Bookshelf prend en charge les **Kindle modernes en MTP** via libmtp.
 
 La version actuelle cible **Apple Silicon** et est signée ad-hoc. Si macOS bloque le premier lancement, faites un clic droit sur l’app et choisissez **Ouvrir**.
 
-Pour une distribution sans alertes Gatekeeper, utilisez un certificat Developer ID et la notarisation. Voir `docs/BUILD.md`.
-
 ## Compilation
 
 Prérequis : macOS 14+, Xcode, Go, Homebrew, `pkg-config`, `libmtp` et `libusb`.

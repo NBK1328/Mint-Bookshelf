@@ -63,8 +63,6 @@ Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
 
 当前版本适用于 **Apple Silicon**，使用 ad-hoc 签名。如果 macOS 阻止首次启动，请右键点击应用并选择 **打开**。
 
-如需公开分发且不出现 Gatekeeper 警告，请使用 Developer ID 证书并公证。参见 `docs/BUILD.md`。
-
 ## 构建
 
 需要 macOS 14+、Xcode、Go、Homebrew、`pkg-config`、`libmtp` 和 `libusb`。

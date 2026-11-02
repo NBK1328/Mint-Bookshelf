@@ -64,8 +64,6 @@ Mint Bookshelf supports **modern MTP Kindles** through libmtp.
 
 The current release build targets **Apple Silicon** and is ad-hoc signed. If macOS blocks the first launch, right-click the app and choose **Open**.
 
-For public distribution without Gatekeeper warnings, build with a Developer ID certificate and notarize the app. See `docs/BUILD.md`.
-
 ## Build
 
 Requirements: macOS 14+, Xcode, Go, Homebrew, `pkg-config`, `libmtp`, and `libusb`.
