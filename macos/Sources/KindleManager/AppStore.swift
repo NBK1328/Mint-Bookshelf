@@ -60,7 +60,7 @@ class AppStore: ObservableObject {
         if let data = initRaw.data(using: .utf8),
            let payload = try? JSONDecoder().decode(InitPayload.self, from: data) {
             if !payload.ok {
-                lastError = payload.error ?? t("Initialization failed")
+                lastError = payload.error.map { localizedError($0) } ?? t("Initialization failed")
             }
         } else {
             lastError = t("Initialization failed")
@@ -88,6 +88,10 @@ class AppStore: ObservableObject {
         L10n.text(key, language, arguments)
     }
 
+    func localizedError(_ text: String) -> String {
+        L10n.error(text, language)
+    }
+
     func toggleTheme() {
         theme = theme == .dark ? .light : .dark
     }
@@ -103,7 +107,7 @@ class AppStore: ObservableObject {
                 return pathIsUnderRoot(path, root: root)
             }
         } catch {
-            lastError = error.localizedDescription
+            lastError = localizedError(error.localizedDescription)
         }
     }
 
@@ -130,7 +134,7 @@ class AppStore: ObservableObject {
             operations = try loadOperations()
         } catch {
             if !silent {
-                lastError = error.localizedDescription
+                lastError = localizedError(error.localizedDescription)
             }
         }
     }
@@ -161,7 +165,7 @@ class AppStore: ObservableObject {
             libraryStatus = message
             return ScanResult(ok: true, added: added, error: nil)
         } catch {
-            let message = error.localizedDescription
+            let message = localizedError(error.localizedDescription)
             lastError = message
             libraryStatus = message
             return ScanResult(ok: false, added: 0, error: message)
@@ -260,9 +264,10 @@ class AppStore: ObservableObject {
             if let error = loaded.error {
                 devices = []
                 deviceFiles = []
-                deviceStatus = t("Discovery failed: %@", error)
+                let message = localizedError(error)
+                deviceStatus = t("Discovery failed: %@", message)
                 deviceState = "error"
-                lastError = error
+                lastError = message
                 deviceLoading = false
                 refreshInFlight = false
                 return
@@ -301,10 +306,12 @@ class AppStore: ObservableObject {
 
     nonisolated private static func openAndListDevice(_ device: RawDevice, language: AppLanguage) -> ([DeviceFile], String) {
         let info = connectDevice(device)
-        guard isOK(info) else { return ([], L10n.text("Connect failed: %@", language, info)) }
+        guard isOK(info) else {
+            return ([], L10n.text("Connect failed: %@", language, L10n.error(errorText(info), language)))
+        }
         let (files, error) = loadDeviceFilesResult()
         if let error {
-            return (files, L10n.text("Kindle connected, listing failed: %@", language, error))
+            return (files, L10n.text("Kindle connected, listing failed: %@", language, L10n.error(error, language)))
         }
         return (files, L10n.text("Kindle connected · %d objects", language, files.count))
     }
@@ -314,8 +321,9 @@ class AppStore: ObservableObject {
         deviceFiles = files
         deviceRevision += 1
         if let error {
-            deviceStatus = t("Listing failed: %@", error)
-            lastError = error
+            let message = localizedError(error)
+            deviceStatus = t("Listing failed: %@", message)
+            lastError = message
         }
     }
 
@@ -344,7 +352,7 @@ class AppStore: ObservableObject {
                 kmString(withCStr(path) { KM_DeviceUploadBook($0, parent, storage) })
             }
             if !isOK(response) {
-                errors.append("\(path): \(errorText(response))")
+                errors.append("\(path): \(localizedError(errorText(response)))")
             }
             deviceTransferDone = index + 1
             deviceStatus = t("Uploading %d/%d…", deviceTransferDone, paths.count)
@@ -401,6 +409,7 @@ class AppStore: ObservableObject {
         let rootName = FileSafety.sanitizeFileName(root.lastPathComponent)
         let successMessage = t("Uploaded folder %@", root.lastPathComponent)
         let existingFiles = deviceFiles
+        let language = self.language
         let result = await runOnDeviceQueue { () -> OpResult in
             var errors: [String] = []
             var folderIDs: [String: UInt32] = [:]
@@ -419,7 +428,7 @@ class AppStore: ObservableObject {
                       let payload = try? JSONDecoder().decode(CreateFolderPayload.self, from: data),
                       payload.ok,
                       let id = payload.id else {
-                    errors.append("\(name): \(errorText(raw))")
+                    errors.append("\(name): \(L10n.error(errorText(raw), language))")
                     return nil
                 }
                 folderIDs[key] = id
@@ -468,7 +477,7 @@ class AppStore: ObservableObject {
                     KM_DeviceUploadBook($0, parent, target.storageID)
                 })
                 if !isOK(raw) {
-                    errors.append("\(entry.components.joined(separator: "/")): \(errorText(raw))")
+                    errors.append("\(entry.components.joined(separator: "/")): \(L10n.error(errorText(raw), language))")
                 }
             }
 
@@ -487,8 +496,9 @@ class AppStore: ObservableObject {
         let result = await runOnDeviceQueue { () -> String in
             kmString(withCStr(path) { KM_DeviceDownloadBook(id, $0) })
         }
-        deviceStatus = result
-        return result
+        let message = localizedError(result)
+        deviceStatus = message
+        return message
     }
 
     func openDeviceFile(_ file: DeviceFile) async -> String {
@@ -496,7 +506,7 @@ class AppStore: ObservableObject {
         do {
             tmp = try FileSafety.temporaryDownloadURL(for: file.name)
         } catch {
-            let message = t("Open failed: %@", error.localizedDescription)
+            let message = t("Open failed: %@", L10n.error(error.localizedDescription, language))
             deviceStatus = message
             return message
         }
@@ -509,8 +519,9 @@ class AppStore: ObservableObject {
             deviceStatus = t("Opened %@", file.name)
             return t("Opened %@", file.name)
         }
-        deviceStatus = result
-        return result
+        let message = localizedError(result)
+        deviceStatus = message
+        return message
     }
 
     func deleteDeviceObjects(_ ids: [UInt32]) async -> String {
@@ -519,11 +530,12 @@ class AppStore: ObservableObject {
 
     func deleteDeviceObjectsChecked(_ ids: [UInt32]) async -> OpResult {
         let deletedMessage = t("Deleted %d item(s)", ids.count)
+        let language = self.language
         let result = await runOnDeviceQueue { () -> OpResult in
             var errors: [String] = []
             for id in ids {
                 let r = kmString(KM_DeviceDeleteBook(id))
-                if !isOK(r) { errors.append(r) }
+                if !isOK(r) { errors.append(L10n.error(errorText(r), language)) }
             }
             return OpResult(
                 ok: errors.isEmpty,
@@ -537,13 +549,14 @@ class AppStore: ObservableObject {
 
     func moveDeviceObjects(_ ids: [UInt32], to folder: DeviceFolder, copy: Bool = false) async -> String {
         let successMessage = t(copy ? "Copied %d item(s) to %@" : "Moved %d item(s) to %@", ids.count, folder.label)
+        let language = self.language
         let result = await runOnDeviceQueue { () -> String in
             var errors: [String] = []
             for id in ids {
                 let r = copy
                     ? kmString(KM_DeviceCopyBook(id, folder.storageID, folder.id))
                     : kmString(KM_DeviceMoveBook(id, folder.storageID, folder.id))
-                if !isOK(r) { errors.append(r) }
+                if !isOK(r) { errors.append(L10n.error(errorText(r), language)) }
             }
             return errors.isEmpty
                 ? successMessage
@@ -559,8 +572,9 @@ class AppStore: ObservableObject {
             kmString(withCStr(name) { KM_DeviceCreateFolder($0, parent, storage) })
         }
         await reloadDeviceFiles()
-        deviceStatus = result
-        return result
+        let message = localizedError(result)
+        deviceStatus = message
+        return message
     }
 
     func renameDeviceObject(_ id: UInt32, to name: String) async -> String {
@@ -568,8 +582,9 @@ class AppStore: ObservableObject {
             kmString(withCStr(name) { KM_DeviceRenameBook(id, $0) })
         }
         await reloadDeviceFiles()
-        deviceStatus = result
-        return result
+        let message = localizedError(result)
+        deviceStatus = message
+        return message
     }
 }
 

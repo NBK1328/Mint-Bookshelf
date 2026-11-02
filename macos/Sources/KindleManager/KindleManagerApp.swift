@@ -1042,7 +1042,7 @@ struct BookDetailView: View {
                             }
 
                             if let isbn = book.isbn, !isbn.isEmpty {
-                                Text("ISBN: \(isbn)")
+                                Text("\(L10n.text("ISBN", language)): \(isbn)")
                                     .font(.caption)
                                     .foregroundStyle(AppPalette.secondaryText(colorScheme))
                                     .textSelection(.enabled)
@@ -1122,7 +1122,7 @@ struct ConvertView: View {
                         placeholder: store.t("No output selected")
                     ) {
                         let base = store.convertInput.isEmpty
-                            ? "book"
+                            ? store.t("book")
                             : URL(fileURLWithPath: store.convertInput).deletingPathExtension().lastPathComponent
                         guard let url = chooseSaveURL(name: "\(base).\(format)") else { return }
                         store.convertOutput = url.path
@@ -1242,8 +1242,9 @@ struct ConvertView: View {
             if isOK(result) {
                 store.convertResult = store.t("Conversion queued")
             } else {
-                store.convertResult = result
-                store.lastError = errorText(result)
+                let message = store.localizedError(errorText(result))
+                store.convertResult = message
+                store.lastError = message
             }
         }
     }
@@ -1542,7 +1543,7 @@ struct DevicesView: View {
                     if isOK(result) {
                         completion(destination, true, nil)
                     } else {
-                        completion(nil, false, APIError.message(errorText(result)))
+                        completion(nil, false, APIError.message(box.store.localizedError(errorText(result))))
                     }
                 } catch {
                     completion(nil, false, error)
@@ -1601,7 +1602,7 @@ struct DevicesView: View {
                 NSPasteboard.general.clearContents()
                 status = trash.errors.isEmpty
                     ? t("Moved %d file(s) to Kindle", trash.trashed)
-                    : trash.errors.joined(separator: "; ")
+                    : joinedErrors(trash.errors, store.language)
             } else {
                 status = result.message
             }
@@ -1628,11 +1629,11 @@ struct DevicesView: View {
                     parent: target.id,
                     storage: target.storage
                 )
-                if !isOK(result) { errors.append(errorText(result)) }
+                if !isOK(result) { errors.append(L10n.error(errorText(result), store.language)) }
             }
             status = errors.isEmpty
                 ? t("Uploaded %d item(s)", items.count)
-                : errors.joined(separator: "; ")
+                : joinedErrors(errors, store.language)
         }
         return true
     }
@@ -1670,7 +1671,7 @@ struct DevicesView: View {
                         withIntermediateDirectories: true
                     )
                 } catch {
-                    errors.append("\(relative): \(error.localizedDescription)")
+                    errors.append("\(relative): \(L10n.error(error.localizedDescription, store.language))")
                     continue
                 }
 
@@ -1678,7 +1679,7 @@ struct DevicesView: View {
                 do {
                     temporary = try FileSafety.temporaryDownloadURL(for: item.file.name)
                 } catch {
-                    errors.append("\(relative): \(error.localizedDescription)")
+                    errors.append("\(relative): \(L10n.error(error.localizedDescription, store.language))")
                     continue
                 }
 
@@ -1688,17 +1689,17 @@ struct DevicesView: View {
                         _ = try FileSafety.moveUnique(temporary, into: parent)
                         done += 1
                     } catch {
-                        errors.append("\(relative): \(error.localizedDescription)")
+                        errors.append("\(relative): \(L10n.error(error.localizedDescription, store.language))")
                     }
                 } else {
-                    errors.append("\(relative): \(r)")
+                    errors.append("\(relative): \(L10n.error(errorText(r), store.language))")
                 }
                 try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
                 store.deviceTransferDone = index + 1
             }
             status = errors.isEmpty
                 ? t("Downloaded %d file(s) to %@", done, dir.lastPathComponent)
-                : errors.joined(separator: "; ")
+                : joinedErrors(errors, store.language)
         }
     }
 
@@ -1735,7 +1736,7 @@ struct DevicesView: View {
                     let safe = try FileSafety.safeDestination(base: dir, components: [f.name])
                     parent = safe.deletingLastPathComponent()
                 } catch {
-                    errors.append("\(f.name): \(error.localizedDescription)")
+                    errors.append("\(f.name): \(L10n.error(error.localizedDescription, store.language))")
                     continue
                 }
 
@@ -1743,7 +1744,7 @@ struct DevicesView: View {
                 do {
                     temporary = try FileSafety.temporaryDownloadURL(for: f.name)
                 } catch {
-                    errors.append("\(f.name): \(error.localizedDescription)")
+                    errors.append("\(f.name): \(L10n.error(error.localizedDescription, store.language))")
                     continue
                 }
 
@@ -1753,10 +1754,10 @@ struct DevicesView: View {
                         _ = try FileSafety.moveUnique(temporary, into: parent)
                         downloaded.append(f)
                     } catch {
-                        errors.append("\(f.name): \(error.localizedDescription)")
+                        errors.append("\(f.name): \(L10n.error(error.localizedDescription, store.language))")
                     }
                 } else {
-                    errors.append("\(f.name): \(r)")
+                    errors.append("\(f.name): \(L10n.error(errorText(r), store.language))")
                 }
                 try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
                 store.deviceTransferDone = index + 1
@@ -1767,7 +1768,7 @@ struct DevicesView: View {
             }
             status = errors.isEmpty
                 ? t("Moved %d file(s) to %@", downloaded.count, dir.lastPathComponent)
-                : errors.joined(separator: "; ")
+                : joinedErrors(errors, store.language)
         }
     }
 
@@ -1813,7 +1814,7 @@ struct DevicesView: View {
                 let r = await store.downloadDeviceFile(id, to: path)
                 if !isOK(r) { errors.append(r) }
             }
-            status = errors.isEmpty ? t("Downloaded %d file(s)", destinations.count) : errors.joined(separator: "; ")
+            status = errors.isEmpty ? t("Downloaded %d file(s)", destinations.count) : joinedErrors(errors, store.language)
         }
     }
 
@@ -2439,7 +2440,7 @@ struct FilesView: View {
         if result.ok {
             status = t(copy ? "Copied %d item(s) to %@" : "Moved %d item(s) to %@", result.succeeded, destDir.lastPathComponent)
         } else {
-            status = result.errors.joined(separator: "; ")
+            status = joinedErrors(result.errors, store.language)
         }
         return result
     }
@@ -2460,7 +2461,7 @@ struct FilesView: View {
             reload()
             status = result.errors.isEmpty
                 ? t("Moved %d item(s) to Trash", result.trashed)
-                : result.errors.joined(separator: "; ")
+                : joinedErrors(result.errors, store.language)
         }
     }
 
@@ -2480,7 +2481,7 @@ struct FilesView: View {
             try FileManager.default.moveItem(at: target, to: dest)
             status = t("Renamed to %@", name)
         } catch {
-            status = error.localizedDescription
+            status = L10n.error(error.localizedDescription, store.language)
         }
         reload()
     }
@@ -2494,7 +2495,7 @@ struct FilesView: View {
             selection = [dest.path]
             status = t("Created %@", dest.lastPathComponent)
         } catch {
-            status = error.localizedDescription
+            status = L10n.error(error.localizedDescription, store.language)
         }
     }
 
@@ -2578,12 +2579,12 @@ struct FilesView: View {
                 reload()
                 status = trash.errors.isEmpty
                     ? t("Moved %d item(s) to Kindle", trash.trashed)
-                    : trash.errors.joined(separator: "; ")
+                    : joinedErrors(trash.errors, store.language)
             } else if errors.isEmpty {
                 reload()
                 status = t("Uploaded %d item(s) to Kindle", count)
             } else {
-                status = errors.joined(separator: "; ")
+                status = joinedErrors(errors, store.language)
             }
         }
     }
@@ -2592,18 +2593,19 @@ struct FilesView: View {
         let dest = currentURL
         let count = urls.count
         status = t("Copying %d item(s)…", count)
+        let language = store.language
         Task {
             let result = await Task.detached(priority: .userInitiated) {
-                FilesView.copyIntoLocal(urls, destination: dest)
+                FilesView.copyIntoLocal(urls, destination: dest, language: language)
             }.value
             reload()
             status = result.errors.isEmpty
                 ? t("Copied %d item(s)", result.copied)
-                : result.errors.joined(separator: "; ")
+                : joinedErrors(result.errors, store.language)
         }
     }
 
-    nonisolated private static func copyIntoLocal(_ urls: [URL], destination: URL) -> ImportResult {
+    nonisolated private static func copyIntoLocal(_ urls: [URL], destination: URL, language: AppLanguage) -> ImportResult {
         var copied = 0
         var errors: [String] = []
         for src in urls where src.isFileURL {
@@ -2613,7 +2615,7 @@ struct FilesView: View {
                 _ = try FileSafety.copyUnique(src, into: destination)
                 copied += 1
             } catch {
-                errors.append("\(src.lastPathComponent): \(error.localizedDescription)")
+                errors.append("\(src.lastPathComponent): \(L10n.error(error.localizedDescription, language))")
             }
         }
         return ImportResult(copied: copied, errors: errors)
