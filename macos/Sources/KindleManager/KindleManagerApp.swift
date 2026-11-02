@@ -741,6 +741,7 @@ struct LibraryView: View {
                     .padding(.vertical, 6)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { searchFocused = false })
     }
