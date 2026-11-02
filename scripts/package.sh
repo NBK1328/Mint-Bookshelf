@@ -37,6 +37,7 @@ if [[ ! -f "$LIBMTp_SRC" || ! -f "$LIBUSB_SRC" ]]; then
   exit 1
 fi
 
+rm -f "$APP/Contents/Frameworks/$LIBMTp_NAME" "$APP/Contents/Frameworks/$LIBUSB_NAME"
 cp -L "$LIBMTp_SRC" "$APP/Contents/Frameworks/$LIBMTp_NAME"
 cp -L "$LIBUSB_SRC" "$APP/Contents/Frameworks/$LIBUSB_NAME"
 

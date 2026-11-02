@@ -531,9 +531,11 @@ struct ContentView: View {
                     }
                 }
             }
+            #if compiler(>=6.2)
             if #available(macOS 26.0, *) {
                 ToolbarSpacer(.flexible)
             }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 10) {
                     Button {
@@ -702,10 +704,12 @@ struct LibraryView: View {
                     || ($0.series ?? "").localizedCaseInsensitiveContains(query)
             }
         }
-        return list.sorted(by: sortBooks)
+        return list.sorted { lhs, rhs in
+            Self.sortBooks(lhs, rhs, sort: sort)
+        }
     }
 
-    private func sortBooks(_ lhs: Book, _ rhs: Book) -> Bool {
+    private static func sortBooks(_ lhs: Book, _ rhs: Book, sort: LibrarySort) -> Bool {
         let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
         switch sort {
         case .titleAscending:
