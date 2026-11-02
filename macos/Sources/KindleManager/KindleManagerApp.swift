@@ -487,6 +487,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @ObservedObject var store: AppStore
+    @State private var showLanguageMenu = false
 
     private var paletteScheme: ColorScheme { store.theme.colorScheme }
 
@@ -504,6 +505,20 @@ struct ContentView: View {
         .background(AppPalette.canvas(paletteScheme))
         .background(WindowConfigurator())
         .tint(AppPalette.accent(paletteScheme))
+        .overlay(alignment: .topTrailing) {
+            if showLanguageMenu {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { showLanguageMenu = false }
+
+                    languageMenu
+                        .padding(.top, 8)
+                        .padding(.trailing, 20)
+                }
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 4) {
@@ -517,25 +532,14 @@ struct ContentView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 10) {
-                    Menu {
-                        ForEach(AppLanguage.allCases) { language in
-                            Button {
-                                store.language = language
-                            } label: {
-                                if store.language == language {
-                                    Label(language.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(language.displayName)
-                                }
-                            }
-                        }
+                    Button {
+                        showLanguageMenu.toggle()
                     } label: {
                         topBarIcon("globe")
                     }
+                    .buttonStyle(.borderless)
                     .help(store.t("Language"))
-                    .menuStyle(.borderlessButton)
                     .fixedSize()
-
                     Button {
                         store.toggleTheme()
                     } label: {
@@ -558,6 +562,43 @@ struct ContentView: View {
         } message: {
             Text(store.lastError ?? "")
         }
+    }
+
+    private var languageMenu: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(AppLanguage.allCases) { language in
+                Button {
+                    store.language = language
+                    showLanguageMenu = false
+                } label: {
+                    Text(language.displayName)
+                        .font(.callout)
+                        .fontWeight(store.language == language ? .semibold : .regular)
+                        .foregroundStyle(store.language == language
+                            ? AppPalette.accent(paletteScheme)
+                            : Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            store.language == language
+                                ? AppPalette.accent(paletteScheme).opacity(0.16)
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .frame(width: 170)
+        .background(AppPalette.panel(paletteScheme), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppPalette.border(paletteScheme), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 16, y: 8)
     }
 
     private func topBarIcon(_ name: String) -> some View {
