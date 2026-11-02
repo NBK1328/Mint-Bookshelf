@@ -52,6 +52,9 @@ jobs:
       - name: Go tests
         run: go test ./...
 
+      - name: Build core dylib
+        run: make build-core
+
       - name: Swift tests
         run: swift test --package-path macos
 
