@@ -1,10 +1,13 @@
 package library
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kindle-manager/kindle-manager/internal/storage"
 )
@@ -14,7 +17,9 @@ func readCalibreMetadata(b *storage.Book) {
 	if path == "" {
 		return
 	}
-	out, err := exec.Command(path, b.Path).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, b.Path).Output()
 	if err != nil {
 		return
 	}
@@ -47,6 +52,20 @@ func readCalibreMetadata(b *storage.Book) {
 		var index float64
 		fmt.Sscanf(value, "%f", &index)
 		b.SeriesIndex = index
+	}
+
+	cover := filepath.Join(CacheDir(), cacheKeyForBook(b)+".jpg")
+	if info, err := os.Stat(cover); err == nil && info.Size() > 0 {
+		b.CoverPath = cover
+	} else {
+		coverCtx, coverCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		coverErr := exec.CommandContext(coverCtx, path, "--get-cover="+cover, b.Path).Run()
+		coverCancel()
+		if coverErr == nil {
+			if info, err := os.Stat(cover); err == nil && info.Size() > 0 {
+				b.CoverPath = cover
+			}
+		}
 	}
 }
 

@@ -612,6 +612,18 @@ struct LibraryView: View {
         return URL(fileURLWithPath: root).lastPathComponent
     }
 
+    private var bookCountText: String {
+        switch store.language {
+        case .en: "Books: \(store.books.count)"
+        case .ru: "Книг: \(store.books.count)"
+        }
+    }
+
+    private func logLibraryState() {
+        let line = "root=\(store.libraryRoot ?? "nil") books=\(store.books.count) filtered=\(filteredBooks.count) header=\(bookCountText) status=\(store.libraryStatus)\n"
+        try? line.write(toFile: "/tmp/km-ui-debug.txt", atomically: true, encoding: .utf8)
+    }
+
     var body: some View {
         Group {
             if store.libraryRoot == nil {
@@ -620,6 +632,9 @@ struct LibraryView: View {
                 libraryContent
             }
         }
+        .onAppear { logLibraryState() }
+        .onChange(of: store.books.count) { _, _ in logLibraryState() }
+        .onChange(of: store.libraryStatus) { _, _ in logLibraryState() }
     }
 
     private var emptyLibrary: some View {
@@ -678,7 +693,7 @@ struct LibraryView: View {
                 Text(folderName)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text(store.t("%d book(s)", store.books.count))
+                Text(bookCountText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -701,6 +716,14 @@ struct LibraryView: View {
             }
             .buttonStyle(.borderless)
             .help(store.t(sortAscending ? "Sort Z–A" : "Sort A–Z"))
+            Button {
+                Task { _ = await store.rescanLibrary() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help(store.t("Refresh"))
+            .disabled(store.libraryScanning)
             Button { chooseLibrary() } label: {
                 Image(systemName: "folder")
             }

@@ -53,6 +53,11 @@ func readEPUBMetadata(b *storage.Book) {
 		data, _ := io.ReadAll(rc)
 		rc.Close()
 		parseOPF(b, string(data), filepath.Dir(opfPath))
+		if b.CoverPath == "" {
+			if entry := firstImageEntry(zr); entry != "" {
+				b.CoverPath = "zip://" + b.Path + "!" + entry
+			}
+		}
 		return
 	}
 }
@@ -132,6 +137,25 @@ func parseOPF(b *storage.Book, data string, base string) {
 		full = strings.TrimPrefix(filepath.Clean(full), "./")
 		b.CoverPath = "zip://" + b.Path + "!" + full
 	}
+}
+
+func firstImageEntry(zr *zip.ReadCloser) string {
+	fallback := ""
+	for _, file := range zr.File {
+		if strings.HasPrefix(file.Name, "META-INF/") {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(file.Name)) {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+			if strings.Contains(strings.ToLower(file.Name), "cover") {
+				return file.Name
+			}
+			if fallback == "" {
+				fallback = file.Name
+			}
+		}
+	}
+	return fallback
 }
 
 func coverHref(pkg opfPackage) string {

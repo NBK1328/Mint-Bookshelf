@@ -128,3 +128,54 @@ func TestScanDetectsMoveByFingerprint(t *testing.T) {
 		t.Fatalf("books = %+v", books)
 	}
 }
+
+func TestScanOnlySelectedRoot(t *testing.T) {
+	base := t.TempDir()
+	inside := filepath.Join(base, "inside")
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(inside, "inside.txt"), []byte("a"), 0o644)
+	os.WriteFile(filepath.Join(outside, "outside.txt"), []byte("b"), 0o644)
+
+	dbf, _ := os.CreateTemp("", "km-root-*.db")
+	dbf.Close()
+	os.Remove(dbf.Name())
+	db, _ := storage.Open(dbf.Name())
+	defer db.Close()
+	defer os.Remove(dbf.Name())
+
+	sc := NewScanner(db)
+	result, err := sc.ScanRoot(inside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 1 {
+		t.Fatalf("scanned = %+v", result)
+	}
+	books, _ := db.Books()
+	if len(books) != 1 || filepath.Base(books[0].Path) != "inside.txt" {
+		t.Fatalf("books = %+v", books)
+	}
+}
+
+func TestScanRejectsFilesystemRoot(t *testing.T) {
+	dbf, _ := os.CreateTemp("", "km-root-guard-*.db")
+	dbf.Close()
+	os.Remove(dbf.Name())
+	db, _ := storage.Open(dbf.Name())
+	defer db.Close()
+	defer os.Remove(dbf.Name())
+
+	sc := NewScanner(db)
+	if _, err := sc.ScanRoot("/"); err == nil {
+		t.Fatal("expected filesystem root rejection")
+	}
+	if _, err := sc.ScanRoot(""); err == nil {
+		t.Fatal("expected empty root rejection")
+	}
+}

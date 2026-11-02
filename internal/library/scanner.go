@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,11 +43,22 @@ type scanCandidate struct {
 func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 	var result ScanResult
 
-	resolved, err := filepath.EvalSymlinks(root)
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return result, fmt.Errorf("empty scan root")
+	}
+	absolute, err := filepath.Abs(root)
 	if err != nil {
-		resolved = root
+		return result, err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		resolved = absolute
 	}
 	root = filepath.Clean(resolved)
+	if root == "/" {
+		return result, fmt.Errorf("refusing to scan the filesystem root")
+	}
 	if err := s.DB.AddRoot(root); err != nil {
 		return result, err
 	}
@@ -68,6 +80,12 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 			return err
 		}
 		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
@@ -106,20 +124,27 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 	moved := make(map[int64]bool)
 
 	for _, file := range files {
-		b := &storage.Book{
-			Path:        file.path,
-			Format:      strings.TrimPrefix(file.ext, "."),
-			Size:        file.size,
-			ModifiedAt:  file.modified,
-			AddedAt:     time.Now(),
-			Fingerprint: fingerprint(file.size, file.modified),
-		}
-		b.Title = strings.TrimSuffix(filepath.Base(file.path), file.ext)
-		fillMetadata(b)
-		ExtractCovers(b)
+		fingerprint := fingerprint(file.size, file.modified)
 
 		if previous, ok := byPath[file.path]; ok {
+			if previous.Size == file.size &&
+				previous.ModifiedAt.UnixNano() == file.modified.UnixNano() &&
+				previous.Fingerprint == fingerprint &&
+				coverAvailable(previous.CoverPath) {
+				previous.Path = file.path
+				previous.Format = strings.TrimPrefix(file.ext, ".")
+				previous.Deleted = false
+				if err := s.DB.UpsertBook(&previous); err != nil {
+					return result, err
+				}
+				result.Updated++
+				continue
+			}
+
+			b := newScanBook(file, fingerprint)
 			b.AddedAt = previous.AddedAt
+			fillMetadata(b)
+			ExtractCovers(b)
 			if err := s.DB.UpsertBook(b); err != nil {
 				return result, err
 			}
@@ -127,14 +152,21 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 			continue
 		}
 
-		if candidates := unseenByFingerprint[b.Fingerprint]; len(candidates) > 0 {
+		if candidates := unseenByFingerprint[fingerprint]; len(candidates) > 0 {
 			previous := candidates[0]
-			unseenByFingerprint[b.Fingerprint] = candidates[1:]
+			unseenByFingerprint[fingerprint] = candidates[1:]
+			previous.Path = file.path
+			previous.Format = strings.TrimPrefix(file.ext, ".")
+			previous.Fingerprint = fingerprint
+			previous.Deleted = false
+			if !coverAvailable(previous.CoverPath) {
+				fillMetadata(&previous)
+				ExtractCovers(&previous)
+			}
 			if err := s.DB.MoveBookPath(previous.ID, file.path); err != nil {
 				return result, err
 			}
-			b.AddedAt = previous.AddedAt
-			if err := s.DB.UpsertBook(b); err != nil {
+			if err := s.DB.UpsertBook(&previous); err != nil {
 				return result, err
 			}
 			moved[previous.ID] = true
@@ -142,6 +174,9 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 			continue
 		}
 
+		b := newScanBook(file, fingerprint)
+		fillMetadata(b)
+		ExtractCovers(b)
 		if err := s.DB.UpsertBook(b); err != nil {
 			return result, err
 		}
@@ -161,6 +196,27 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 	slog.Info("scan done", "root", root, "scanned", result.Scanned, "added", result.Added,
 		"updated", result.Updated, "moved", result.Moved, "deleted", result.Deleted)
 	return result, nil
+}
+
+func coverAvailable(path string) bool {
+	if path == "" || strings.HasPrefix(path, "zip://") {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
+}
+
+func newScanBook(file scanCandidate, fingerprint string) *storage.Book {
+	b := &storage.Book{
+		Path:        file.path,
+		Format:      strings.TrimPrefix(file.ext, "."),
+		Size:        file.size,
+		ModifiedAt:  file.modified,
+		AddedAt:     time.Now(),
+		Fingerprint: fingerprint,
+	}
+	b.Title = strings.TrimSuffix(filepath.Base(file.path), file.ext)
+	return b
 }
 
 func isUnderRoot(path, root string) bool {
@@ -188,7 +244,7 @@ func fillMetadata(b *storage.Book) {
 		readEPUBMetadata(b)
 	case "fb2":
 		readFB2Metadata(b)
-	default:
+	case "pdf", "mobi", "azw", "azw3":
 		readCalibreMetadata(b)
 	}
 }

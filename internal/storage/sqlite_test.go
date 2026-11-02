@@ -104,3 +104,35 @@ func TestDeviceFoldersRoundTrip(t *testing.T) {
 		t.Fatalf("folders after replace = %+v", got)
 	}
 }
+
+func TestOpenRemovesRelativePaths(t *testing.T) {
+	f, _ := os.CreateTemp("", "km-relative-*.db")
+	f.Close()
+	os.Remove(f.Name())
+	db, err := Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertBook(&Book{Path: "Applications/example.rtf"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddRoot("."); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	db, err = Open(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer os.Remove(f.Name())
+	books, _ := db.Books()
+	if len(books) != 0 {
+		t.Fatalf("relative paths were not removed: %+v", books)
+	}
+	roots, _ := db.Roots()
+	if len(roots) != 0 {
+		t.Fatalf("relative roots were not removed: %+v", roots)
+	}
+}

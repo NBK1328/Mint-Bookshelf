@@ -5,7 +5,15 @@ import KindleManagerSupport
 @MainActor
 class AppStore: ObservableObject {
     @Published var books: [Book] = []
-    @Published var libraryRoot: String?
+    @Published var libraryRoot: String? = UserDefaults.standard.string(forKey: "libraryRoot") {
+        didSet {
+            if let root = libraryRoot {
+                UserDefaults.standard.set(root, forKey: "libraryRoot")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "libraryRoot")
+            }
+        }
+    }
     @Published var language: AppLanguage = AppLanguage(
         rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? ""
     ) ?? AppLanguage.preferred {
@@ -85,7 +93,7 @@ class AppStore: ObservableObject {
     }
 
     func reloadBooks() {
-        guard let root = libraryRoot else {
+        guard let root = libraryRoot, root.hasPrefix("/"), root != "/" else {
             books = []
             return
         }
@@ -99,8 +107,19 @@ class AppStore: ObservableObject {
         }
     }
 
+    func rescanLibrary() async -> ScanResult? {
+        guard let root = libraryRoot else { return nil }
+        return await scanLibrary(root)
+    }
+
     func openLibrary(at url: URL) async -> ScanResult {
         let root = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard root != "/" else {
+            let message = t("The filesystem root cannot be used as the library.")
+            lastError = message
+            libraryStatus = message
+            return ScanResult(ok: false, added: 0, error: message)
+        }
         libraryRoot = root
         selectedBook = nil
         return await scanLibrary(root)
@@ -129,9 +148,16 @@ class AppStore: ObservableObject {
             let payload = try decodeEnvelope(raw, as: ScanData.self)
             reloadBooks()
             let added = payload.added ?? 0
-            let message = t("Scanned %d · added %d · updated %d · moved %d · removed %d",
-                               payload.scanned ?? added, added, payload.updated ?? 0,
-                               payload.moved ?? 0, payload.deleted ?? 0)
+            let scanned = payload.scanned ?? added
+            let updated = payload.updated ?? 0
+            let moved = payload.moved ?? 0
+            let removed = payload.deleted ?? 0
+            let message = switch language {
+            case .en:
+                "Scanned \(scanned) · added \(added) · updated \(updated) · moved \(moved) · removed \(removed)"
+            case .ru:
+                "Просканировано \(scanned) · добавлено \(added) · обновлено \(updated) · перемещено \(moved) · удалено \(removed)"
+            }
             libraryStatus = message
             return ScanResult(ok: true, added: added, error: nil)
         } catch {

@@ -1,6 +1,7 @@
 package library
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -91,5 +92,47 @@ func TestReadFB2Metadata(t *testing.T) {
 	}
 	if book.Publisher != "Publisher" || book.Year != 2024 || book.ISBN != "9780000000000" {
 		t.Fatalf("publish = %+v", book)
+	}
+}
+
+func TestEPUBFallbackCoverExtraction(t *testing.T) {
+	dir := t.TempDir()
+	epubPath := filepath.Join(dir, "fallback.epub")
+	f, err := os.Create(epubPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	write := func(name, content string) {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("META-INF/container.xml", `<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>`)
+	write("content.opf", `<package><metadata><title>Fallback</title></metadata><manifest></manifest></package>`)
+	write("images/picture.jpg", "image-bytes")
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	book := &storage.Book{Path: epubPath, Format: "epub"}
+	readEPUBMetadata(book)
+	if book.CoverPath == "" {
+		t.Fatal("fallback cover was not detected")
+	}
+	ExtractCovers(book)
+	if book.CoverPath == "" {
+		t.Fatal("fallback cover was not extracted")
+	}
+	defer os.Remove(book.CoverPath)
+	if _, err := os.Stat(book.CoverPath); err != nil {
+		t.Fatal(err)
 	}
 }

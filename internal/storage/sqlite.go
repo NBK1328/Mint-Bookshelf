@@ -88,6 +88,14 @@ func (d *DB) migrate() error {
 			return fmt.Errorf("migrate: %w", err)
 		}
 	}
+	// Older builds could scan a relative root such as "." and store paths like
+	// "Applications/...". Those entries are never valid for the macOS app.
+	if _, err := d.sql.Exec(`DELETE FROM books WHERE path NOT LIKE '/%'`); err != nil {
+		return fmt.Errorf("migrate cleanup books: %w", err)
+	}
+	if _, err := d.sql.Exec(`DELETE FROM library_roots WHERE path NOT LIKE '/%' OR path = '/'`); err != nil {
+		return fmt.Errorf("migrate cleanup roots: %w", err)
+	}
 	return nil
 }
 
