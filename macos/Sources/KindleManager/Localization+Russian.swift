@@ -47,6 +47,8 @@ extension L10n {
         "Cut %d item(s)": "Вырезано %d объект(ов)",
         "Dark theme": "Тёмная тема",
         "Delete": "Удалить",
+        "Close": "Закрыть",
+        "Description": "Описание",
         "Delete from Kindle?": "Удалить с Kindle?",
         "Deleted %d item(s)": "Удалено %d объект(ов)",
         "Delete…": "Удалить…",

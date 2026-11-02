@@ -590,6 +590,7 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var layout: LibraryLayout = .grid
     @State private var sortAscending = true
+    @FocusState private var searchFocused: Bool
 
     private var filteredBooks: [Book] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -644,7 +645,6 @@ struct LibraryView: View {
     private var libraryContent: some View {
         VStack(spacing: 0) {
             header
-            Divider()
 
             if store.libraryScanning {
                 ProgressView(store.t("Scanning…"))
@@ -660,16 +660,20 @@ struct LibraryView: View {
             } else {
                 HStack(spacing: 0) {
                     content
+
                     if let book = store.selectedBook {
-                        Divider()
-                        BookDetailView(book: book)
-                            .frame(minWidth: 0, idealWidth: 300, maxWidth: 320)
+                        BookDetailView(book: book) {
+                            store.selectedBook = nil
+                        }
+                        .frame(minWidth: 400, idealWidth: 430, maxWidth: 450, maxHeight: .infinity)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.trailing, 16)
                     }
                 }
             }
 
             if !store.libraryStatus.isEmpty {
-                Divider()
                 Text(store.libraryStatus)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -678,6 +682,8 @@ struct LibraryView: View {
                     .padding(.vertical, 6)
             }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { searchFocused = false })
     }
 
     private var header: some View {
@@ -694,6 +700,16 @@ struct LibraryView: View {
             TextField(store.t("Search books"), text: $search)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 220)
+                .focused($searchFocused)
+                .onAppear {
+                    DispatchQueue.main.async { searchFocused = false }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+                    searchFocused = false
+                }
+                .onExitCommand {
+                    searchFocused = false
+                }
             Picker(store.t("View"), selection: $layout) {
                 ForEach(LibraryLayout.allCases) { value in
                     Image(systemName: value.icon).tag(value)
@@ -733,8 +749,8 @@ struct LibraryView: View {
         case .grid:
             ScrollView {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 180, maximum: 180), spacing: 16)],
-                    spacing: 20
+                    columns: [GridItem(.adaptive(minimum: 195), spacing: 18.4)],
+                    spacing: 23
                 ) {
                     ForEach(filteredBooks) { book in
                         BookCard(book: book, selected: store.selectedBook?.id == book.id)
@@ -748,7 +764,8 @@ struct LibraryView: View {
                             }
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 20)
             }
         case .list:
             List(filteredBooks, selection: $store.selectedBook) { book in
@@ -789,21 +806,25 @@ struct BookCover: View {
     let path: String?
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.secondary.opacity(0.10))
+        GeometryReader { proxy in
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.10))
 
-            if let path, let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "book.closed")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                if let path, let image = NSImage(contentsOfFile: path) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                } else {
+                    Image(systemName: "book.closed")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
@@ -838,6 +859,7 @@ struct BookCard: View {
             }
         }
         .padding(10)
+        .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(selected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
@@ -852,63 +874,103 @@ struct BookCard: View {
 
 struct BookDetailView: View {
     let book: Book
+    let onClose: () -> Void
     @Environment(\.appLanguage) private var language
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                BookCover(path: book.coverPath)
-                    .frame(width: 170, height: 255)
-                    .frame(maxWidth: .infinity)
-
-                Text(book.title)
-                    .font(.title3.weight(.semibold))
-                    .textSelection(.enabled)
-                Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                if let series = book.series, !series.isEmpty {
-                    Text(series + (book.seriesIndex.map { " #\($0)" } ?? ""))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-                    if let publisher = book.publisher, !publisher.isEmpty {
-                        GridRow { Text(L10n.text("Publisher", language)).foregroundStyle(.secondary); Text(publisher) }
-                    }
-                    if let year = book.year, year > 0 {
-                        GridRow { Text(L10n.text("Year", language)).foregroundStyle(.secondary); Text(String(year)) }
-                    }
-                    if let bookLanguage = book.language, !bookLanguage.isEmpty {
-                        GridRow { Text(L10n.text("Language of book", language)).foregroundStyle(.secondary); Text(bookLanguage) }
-                    }
-                    if let isbn = book.isbn, !isbn.isEmpty {
-                        GridRow { Text(L10n.text("ISBN", language)).foregroundStyle(.secondary); Text(isbn).textSelection(.enabled) }
-                    }
-                    GridRow { Text(L10n.text("Format", language)).foregroundStyle(.secondary); Text(book.format.uppercased()) }
-                    GridRow { Text(L10n.text("Size", language)).foregroundStyle(.secondary); Text(byteString(book.size)) }
-                }
-                .font(.caption)
-
-                if let description = book.description, !description.isEmpty {
-                    Divider()
-                    Text(description)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                }
-
-                if let path = book.path {
-                    Button(L10n.text("Show in Finder", language)) {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                    }
-                    .buttonStyle(.link)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var metadataLine: String {
+        var parts = [book.format.uppercased(), byteString(book.size)]
+        if let year = book.year, year > 0 {
+            parts.append(String(year))
         }
+        if let bookLanguage = book.language, !bookLanguage.isEmpty {
+            parts.append(bookLanguage.uppercased())
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(L10n.text("Description", language))
+                    .font(.headline)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help(L10n.text("Close", language))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .top, spacing: 16) {
+                        BookCover(path: book.coverPath)
+                            .frame(width: 140, height: 210)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(book.title)
+                                .font(.title2.weight(.semibold))
+                                .lineLimit(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+
+                            Text(book.author.isEmpty ? L10n.text("Unknown author", language) : book.author)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+
+                            if let series = book.series, !series.isEmpty {
+                                Text(series + (book.seriesIndex.map { " #\($0)" } ?? ""))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Text(metadataLine)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            if let publisher = book.publisher, !publisher.isEmpty {
+                                Text("\(L10n.text("Publisher", language)): \(publisher)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+
+                            if let isbn = book.isbn, !isbn.isEmpty {
+                                Text("ISBN: \(isbn)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+
+                            if let path = book.path {
+                                Button(L10n.text("Show in Finder", language)) {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                                }
+                                .buttonStyle(.link)
+                                .font(.caption)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if let description = book.description, !description.isEmpty {
+                        Text(description)
+                            .font(.callout)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onExitCommand(perform: onClose)
     }
 }
 
