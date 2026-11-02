@@ -784,7 +784,7 @@ struct LibraryView: View {
         case .list:
             List(filteredBooks, selection: $store.selectedBook) { book in
                 HStack(spacing: 10) {
-                    BookCover(path: book.coverPath)
+                    BookCover(path: book.coverPath, title: book.title, author: book.author)
                         .frame(width: 34, height: 51)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(book.title).font(.headline).lineLimit(1)
@@ -820,6 +820,8 @@ struct LibraryView: View {
 
 struct BookCover: View {
     let path: String?
+    var title: String? = nil
+    var author: String? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -831,18 +833,48 @@ struct BookCover: View {
                 if let path, let image = NSImage(contentsOfFile: path) {
                     Image(nsImage: image)
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
                         .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
+                } else if let title, proxy.size.width >= 70 {
+                    generatedCover(title: title, author: author, size: proxy.size)
                 } else {
                     Image(systemName: "book.closed")
                         .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppPalette.secondaryText(colorScheme))
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func generatedCover(title: String, author: String?, size: CGSize) -> some View {
+        ZStack {
+            LinearGradient(
+                colors: [AppPalette.accent(colorScheme).opacity(0.62), AppPalette.card(colorScheme)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            VStack(spacing: size.width * 0.035) {
+                Text(title)
+                    .font(.system(size: max(9, min(18, size.width * 0.10)), weight: .semibold, design: .serif))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(5)
+                    .minimumScaleFactor(0.65)
+                    .foregroundStyle(.white)
+
+                if let author, !author.isEmpty {
+                    Text(author)
+                        .font(.system(size: max(7, min(11, size.width * 0.065)), weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .foregroundStyle(.white.opacity(0.78))
+                }
+            }
+            .padding(.horizontal, size.width * 0.10)
+            .padding(.vertical, size.height * 0.08)
+        }
     }
 }
 
@@ -854,7 +886,7 @@ struct BookCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            BookCover(path: book.coverPath)
+            BookCover(path: book.coverPath, title: book.title, author: book.author)
                 .frame(width: 150, height: 225)
                 .frame(maxWidth: .infinity)
 
@@ -925,7 +957,7 @@ struct BookDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .top, spacing: 16) {
-                        BookCover(path: book.coverPath)
+                        BookCover(path: book.coverPath, title: book.title, author: book.author)
                             .frame(width: 140, height: 210)
 
                         VStack(alignment: .leading, spacing: 8) {
