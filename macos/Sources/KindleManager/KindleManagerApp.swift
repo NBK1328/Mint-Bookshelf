@@ -1,6 +1,7 @@
 import SwiftUI
 @preconcurrency import AppKit
 import UniformTypeIdentifiers
+import KindleManagerSupport
 
 @main
 struct KindleManagerApp: App {
@@ -143,7 +144,14 @@ class AppStore: ObservableObject {
     }
 
     func openDeviceFile(_ file: DeviceFile) async -> String {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(file.name)
+        let tmp: URL
+        do {
+            tmp = try FileSafety.temporaryDownloadURL(for: file.name)
+        } catch {
+            let message = "Open failed: \(error.localizedDescription)"
+            deviceStatus = message
+            return message
+        }
         let id = file.id
         let result = await runOnDeviceQueue { () -> String in
             kmString(withCStr(tmp.path) { KM_DeviceDownloadBook(id, $0) })
@@ -292,6 +300,12 @@ struct OpResult: Sendable {
 
 struct ImportResult: Sendable {
     let copied: Int
+    let errors: [String]
+}
+
+struct LocalTransferResult: Sendable {
+    let ok: Bool
+    let succeeded: Int
     let errors: [String]
 }
 
@@ -466,22 +480,6 @@ func writeFileURLsToPasteboard(_ urls: [URL], cut: Bool) {
     pb.writeObjects(urls.map { $0 as NSURL })
     if cut {
         pb.setString("1", forType: kindleCutType)
-    }
-}
-
-func uniqueDestination(in dir: URL, name: String) -> URL {
-    let fm = FileManager.default
-    var candidate = dir.appendingPathComponent(name)
-    if !fm.fileExists(atPath: candidate.path) { return candidate }
-    let ns = name as NSString
-    let base = ns.deletingPathExtension
-    let ext = ns.pathExtension
-    var i = 1
-    while true {
-        let next = ext.isEmpty ? "\(base) \(i)" : "\(base) \(i).\(ext)"
-        candidate = dir.appendingPathComponent(next)
-        if !fm.fileExists(atPath: candidate.path) { return candidate }
-        i += 1
     }
 }
 
@@ -1034,22 +1032,40 @@ struct DevicesView: View {
             var errors: [String] = []
             var done = 0
             for item in items {
-                let dest = dir.appendingPathComponent(item.relative)
+                let relative = item.components.joined(separator: "/")
+                let parent: URL
                 do {
+                    let safe = try FileSafety.safeDestination(base: dir, components: item.components)
+                    parent = safe.deletingLastPathComponent()
                     try FileManager.default.createDirectory(
-                        at: dest.deletingLastPathComponent(),
+                        at: parent,
                         withIntermediateDirectories: true
                     )
                 } catch {
-                    errors.append("\(item.relative): \(error.localizedDescription)")
+                    errors.append("\(relative): \(error.localizedDescription)")
                     continue
                 }
-                let r = await store.downloadDeviceFile(item.file.id, to: dest.path)
-                if isOK(r) {
-                    done += 1
-                } else {
-                    errors.append("\(item.relative): \(r)")
+
+                let temporary: URL
+                do {
+                    temporary = try FileSafety.temporaryDownloadURL(for: item.file.name)
+                } catch {
+                    errors.append("\(relative): \(error.localizedDescription)")
+                    continue
                 }
+
+                let r = await store.downloadDeviceFile(item.file.id, to: temporary.path)
+                if isOK(r) {
+                    do {
+                        _ = try FileSafety.moveUnique(temporary, into: parent)
+                        done += 1
+                    } catch {
+                        errors.append("\(relative): \(error.localizedDescription)")
+                    }
+                } else {
+                    errors.append("\(relative): \(r)")
+                }
+                try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
             }
             status = errors.isEmpty
                 ? "Downloaded \(done) file(s) to \(dir.lastPathComponent)"
@@ -1079,13 +1095,35 @@ struct DevicesView: View {
             var downloaded: [DeviceFile] = []
             var errors: [String] = []
             for f in files {
-                let dest = dir.appendingPathComponent(f.name)
-                let r = await store.downloadDeviceFile(f.id, to: dest.path)
+                let parent: URL
+                do {
+                    let safe = try FileSafety.safeDestination(base: dir, components: [f.name])
+                    parent = safe.deletingLastPathComponent()
+                } catch {
+                    errors.append("\(f.name): \(error.localizedDescription)")
+                    continue
+                }
+
+                let temporary: URL
+                do {
+                    temporary = try FileSafety.temporaryDownloadURL(for: f.name)
+                } catch {
+                    errors.append("\(f.name): \(error.localizedDescription)")
+                    continue
+                }
+
+                let r = await store.downloadDeviceFile(f.id, to: temporary.path)
                 if isOK(r) {
-                    downloaded.append(f)
+                    do {
+                        _ = try FileSafety.moveUnique(temporary, into: parent)
+                        downloaded.append(f)
+                    } catch {
+                        errors.append("\(f.name): \(error.localizedDescription)")
+                    }
                 } else {
                     errors.append("\(f.name): \(r)")
                 }
+                try? FileManager.default.removeItem(at: temporary.deletingLastPathComponent())
             }
             if !downloaded.isEmpty {
                 let result = await store.deleteDeviceObjectsChecked(downloaded.map(\.id))
@@ -1100,28 +1138,28 @@ struct DevicesView: View {
     nonisolated private static func flattenFiles(
         _ roots: [DeviceFile],
         all: [DeviceFile]
-    ) -> [(file: DeviceFile, relative: String)] {
+    ) -> [(file: DeviceFile, components: [String])] {
         var byParent: [UInt32: [DeviceFile]] = [:]
         for f in all { byParent[f.parentID, default: []].append(f) }
-        var out: [(DeviceFile, String)] = []
+        var out: [(DeviceFile, [String])] = []
         var seen = Set<UInt32>()
-        func walk(_ f: DeviceFile, prefix: String) {
+        func walk(_ f: DeviceFile, prefix: [String]) {
             guard !seen.contains(f.id) else { return }
             seen.insert(f.id)
-            let path = prefix.isEmpty ? f.name : prefix + "/" + f.name
+            let path = prefix + [f.name]
             if f.isFolder {
                 for child in byParent[f.id] ?? [] { walk(child, prefix: path) }
             } else {
                 out.append((f, path))
             }
         }
-        for root in roots { walk(root, prefix: "") }
-        return out.map { (file: $0.0, relative: $0.1) }
+        for root in roots { walk(root, prefix: []) }
+        return out.map { (file: $0.0, components: $0.1) }
     }
 
     private func download(_ f: DeviceFile) {
         guard !f.isFolder else { return }
-        guard let dest = chooseSaveURL(name: f.name) else { return }
+        guard let dest = chooseSaveURL(name: FileSafety.sanitizeFileName(f.name)) else { return }
         Task { status = await store.downloadDeviceFile(f.id, to: dest.path) }
     }
 
@@ -1130,7 +1168,7 @@ struct DevicesView: View {
         guard !files.isEmpty else { return }
         var destinations: [(UInt32, String)] = []
         for f in files {
-            guard let dest = chooseSaveURL(name: f.name) else { return }
+            guard let dest = chooseSaveURL(name: FileSafety.sanitizeFileName(f.name)) else { return }
             destinations.append((f.id, dest.path))
         }
         Task {
@@ -1153,10 +1191,31 @@ struct DevicesView: View {
     }
 
     private func applyTransfer(to target: DeviceFolder) {
+        let folderIDs = Set(pickerFiles.filter(\.isFolder).map(\.id))
+        if !folderIDs.isEmpty && isDeviceDescendant(target.id, of: folderIDs) {
+            status = "Cannot move or copy a folder into itself"
+            return
+        }
         let ids = pickerFiles.map(\.id)
         let copy = pickerCopy
         pickerFiles = []
         Task { status = await store.moveDeviceObjects(ids, to: target, copy: copy) }
+    }
+
+    private func isDeviceDescendant(_ targetID: UInt32, of sourceIDs: Set<UInt32>) -> Bool {
+        var parents: [UInt32: UInt32] = [:]
+        for file in store.deviceFiles where file.isFolder {
+            parents[file.id] = file.parentID
+        }
+        var current = targetID
+        var steps = 0
+        while current != 0 && steps < 128 {
+            if sourceIDs.contains(current) { return true }
+            guard let parent = parents[current] else { return false }
+            current = parent
+            steps += 1
+        }
+        return false
     }
 
     private func createFolder() {
@@ -1713,8 +1772,8 @@ struct FilesView: View {
             status = "Clipboard has no files"
             return
         }
-        performTransfer(sources, to: dest, copy: !moving)
-        if moving {
+        let result = performTransfer(sources, to: dest, copy: !moving)
+        if moving && result.ok {
             clipboard = []
             clipboardCut = false
             NSPasteboard.general.clearContents()
@@ -1723,12 +1782,12 @@ struct FilesView: View {
 
     private func moveTo(_ urls: [URL]) {
         guard let dest = chooseDirectory(prompt: "Move") else { return }
-        performTransfer(urls, to: dest, copy: false)
+        _ = performTransfer(urls, to: dest, copy: false)
     }
 
     private func copyTo(_ urls: [URL]) {
         guard let dest = chooseDirectory(prompt: "Copy") else { return }
-        performTransfer(urls, to: dest, copy: true)
+        _ = performTransfer(urls, to: dest, copy: true)
     }
 
     private func moveSelectionTo() {
@@ -1737,11 +1796,11 @@ struct FilesView: View {
     }
 
     private func duplicate(_ urls: [URL]) {
-        performTransfer(urls, to: currentURL, copy: true)
+        _ = performTransfer(urls, to: currentURL, copy: true)
     }
 
-    private func performTransfer(_ urls: [URL], to destDir: URL, copy: Bool) {
-        let fm = FileManager.default
+    @discardableResult
+    private func performTransfer(_ urls: [URL], to destDir: URL, copy: Bool) -> LocalTransferResult {
         let destStandard = destDir.standardizedFileURL
         var succeeded = 0
         var errors: [String] = []
@@ -1752,12 +1811,11 @@ struct FilesView: View {
             if destStandard.path.hasPrefix(srcStandard.path + "/") { continue }
             if !copy && srcStandard.deletingLastPathComponent().path == destStandard.path { continue }
 
-            let dest = uniqueDestination(in: destStandard, name: src.lastPathComponent)
             do {
                 if copy {
-                    try fm.copyItem(at: srcStandard, to: dest)
+                    _ = try FileSafety.copyUnique(srcStandard, into: destStandard)
                 } else {
-                    try fm.moveItem(at: srcStandard, to: dest)
+                    _ = try FileSafety.moveUnique(srcStandard, into: destStandard)
                 }
                 succeeded += 1
             } catch {
@@ -1771,6 +1829,7 @@ struct FilesView: View {
         } else {
             status = errors.joined(separator: "; ")
         }
+        return LocalTransferResult(ok: errors.isEmpty, succeeded: succeeded, errors: errors)
     }
 
     private func confirmDelete(_ urls: [URL]) {
@@ -1818,9 +1877,8 @@ struct FilesView: View {
     private func createFolder() {
         var name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { name = "untitled folder" }
-        let dest = uniqueDestination(in: currentURL, name: name)
         do {
-            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: false)
+            let dest = try FileSafety.createDirectoryUnique(in: currentURL, name: name)
             reload()
             selection = [dest.path]
             status = "Created \(dest.lastPathComponent)"
@@ -1918,15 +1976,13 @@ struct FilesView: View {
     }
 
     nonisolated private static func copyIntoLocal(_ urls: [URL], destination: URL) -> ImportResult {
-        let fm = FileManager.default
         var copied = 0
         var errors: [String] = []
         for src in urls where src.isFileURL {
             let access = src.startAccessingSecurityScopedResource()
             defer { if access { src.stopAccessingSecurityScopedResource() } }
-            let dest = uniqueDestination(in: destination, name: src.lastPathComponent)
             do {
-                try fm.copyItem(at: src, to: dest)
+                _ = try FileSafety.copyUnique(src, into: destination)
                 copied += 1
             } catch {
                 errors.append("\(src.lastPathComponent): \(error.localizedDescription)")
@@ -2009,23 +2065,12 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         func install(on view: NSView) {
             self.view = view
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-                guard let self,
-                      self.isActive,
-                      let view = self.view,
-                      let window = view.window,
-                      event.window === window,
-                      let content = window.contentView,
-                      let table = Self.findTable(in: content, at: event.locationInWindow)
-                else { return event }
-
-                let point = table.convert(event.locationInWindow, from: nil)
-                guard table.row(at: point) < 0 else { return event }
-
-                let box = RightClickEvent(event: event, view: view)
-                MainActor.assumeIsolated {
-                    self.showMenu(box)
+                guard let self, self.isActive, let anchor = self.view else { return event }
+                let box = RightClickEvent(event: event, view: anchor)
+                let consumed = MainActor.assumeIsolated {
+                    self.handle(box)
                 }
-                return nil
+                return consumed ? nil : event
             }
         }
 
@@ -2041,9 +2086,23 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         }
 
         @MainActor
-        private func showMenu(_ box: RightClickEvent) {
+        private func handle(_ box: RightClickEvent) -> Bool {
+            guard let window = box.view.window,
+                  box.event.window === window,
+                  let content = window.contentView,
+                  let table = Self.findTable(in: content, at: box.event.locationInWindow)
+            else { return false }
+
+            let point = table.convert(box.event.locationInWindow, from: nil)
+            guard table.row(at: point) < 0 else { return false }
+
+            return showMenu(box)
+        }
+
+        @MainActor
+        private func showMenu(_ box: RightClickEvent) -> Bool {
             let items = entries()
-            guard !items.isEmpty else { return }
+            guard !items.isEmpty else { return false }
 
             actions.removeAll()
             let menu = NSMenu()
@@ -2065,8 +2124,10 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
                 }
             }
             NSMenu.popUpContextMenu(menu, with: box.event, for: box.view)
+            return true
         }
 
+        @MainActor
         private static func findTable(in view: NSView, at windowPoint: NSPoint) -> NSTableView? {
             if let table = view as? NSTableView {
                 let point = table.convert(windowPoint, from: nil)
