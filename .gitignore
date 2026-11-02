@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Local documentation
+docs/
+
+# Build artifacts
+build/
+/kindle-core
+
+# Swift build output
+macos/.build/
+macos/KindleManager.app/
