@@ -28,13 +28,20 @@
 
 ## Funciones
 
-| Biblioteca | Kindle | Archivos |
-| --- | --- | --- |
-| Portadas, búsqueda, detalles y orden por título, autor o fecha de incorporación. | Árbol de carpetas MTP, subida, descarga, movimiento, copia, renombrado y borrado. | Explorador local estilo Finder con copiar, pegar, arrastrar y operaciones en segundo plano. |
+- **Biblioteca** — portadas, búsqueda, detalles y orden por título, autor o fecha de incorporación.
+- **Kindle** — árbol de carpetas MTP, subida, descarga, movimiento, copia, renombrado y borrado.
+- **Archivos** — explorador local estilo Finder con copiar, pegar, arrastrar y operaciones en segundo plano.
+- **Conversión** — con Calibre, progreso y cancelación.
+- **Aspecto** — temas claro y oscuro, seis idiomas de interfaz y comportamiento nativo de macOS.
+- **Comodidad** — sin barras de acciones: menús contextuales, atajos y una vista limpia de lista y detalles.
 
-| Conversión | Aspecto | Comodidad |
-| --- | --- | --- |
-| Conversión con Calibre, progreso y cancelación. | Temas claro y oscuro, seis idiomas de interfaz y comportamiento nativo de macOS. | Sin barras de acciones: menús contextuales, atajos y una vista limpia de lista y detalles. |
+## Capturas
+
+<div align="center">
+  <img src="image/Libaray%20light-theme.png" alt="Biblioteca en el tema claro" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="Biblioteca en el tema oscuro" width="49%"><br>
+  <sub>Biblioteca — temas claro y oscuro</sub>
+</div>
 
 ## Qué hace
 
@@ -45,6 +52,11 @@
 - Convierte libros con Calibre y muestra las tareas en la actividad.
 - Cambia entre **inglés, ruso, español, portugués, chino y francés** en cualquier momento.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Conversión con Calibre" width="85%"><br>
+  <sub>Conversión con Calibre</sub>
+</div>
+
 ## Kindle compatibles
 
 Mint Bookshelf usa **Kindle modernos con MTP** mediante libmtp.
@@ -52,6 +64,11 @@ Mint Bookshelf usa **Kindle modernos con MTP** mediante libmtp.
 - Verificado en **Kindle Scribe** y modelos actuales de 2025.
 - Compatible con Kindle Scribe, Paperwhite 5/Signature, Kindle de 11.ª generación y posteriores, Colorsoft y modelos 2024–2025.
 - **No compatible:** Kindle antiguos con USB mass storage, incluido Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Navegador del Kindle" width="85%"><br>
+  <sub>Navegador del Kindle</sub>
+</div>
 
 > Solo debe haber una sesión MTP abierta. Cierra otras herramientas MTP antes de usar la pestaña Kindle.
 

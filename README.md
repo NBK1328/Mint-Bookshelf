@@ -28,13 +28,20 @@
 
 ## Highlights
 
-| Browse your library | Work with your Kindle | Move files without friction |
-| --- | --- | --- |
-| Folder-first library with covers, search, details, and sorting by title, author, or date added. | MTP device browser with folder tree, upload, download, move, copy, rename, and delete. | Finder-style local browser with copy, cut, paste, drag-in, drag-out, and background transfers. |
+- **Browse your library** — Folder-first library with covers, search, details, and sorting by title, author, or date added.
+- **Work with your Kindle** — MTP device browser with folder tree, upload, download, move, copy, rename, and delete.
+- **Move files without friction** — Finder-style local browser with copy, cut, paste, drag-in, drag-out, and background transfers.
+- **Convert and prepare** — Calibre-powered conversion with inline activity, progress, and cancellation.
+- **Make it yours** — Dark and light themes, six UI languages, native macOS window behavior.
+- **Built to stay out of the way** — No action bars or noisy panels. Context menus, keyboard shortcuts, and a clean split view.
 
-| Convert and prepare | Make it yours | Built to stay out of the way |
-| --- | --- | --- |
-| Calibre-powered conversion with inline activity, progress, and cancellation. | Dark and light themes, six UI languages, native macOS window behavior. | No action bars or noisy panels. Context menus, keyboard shortcuts, and a clean split view. |
+## Screenshots
+
+<div align="center">
+  <img src="image/Libaray%20light-theme.png" alt="Library in the light theme" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="Library in the dark theme" width="49%"><br>
+  <sub>Library — light and dark themes</sub>
+</div>
 
 ## What it does
 
@@ -46,6 +53,11 @@
 - Use the local Finder-style browser for drag-and-drop workflows.
 - Switch between **English, Russian, Spanish, Portuguese, Chinese, and French** at any time.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Calibre-powered conversion" width="85%"><br>
+  <sub>Calibre-powered conversion</sub>
+</div>
+
 ## Supported Kindles
 
 Mint Bookshelf supports **modern MTP Kindles** through libmtp.
@@ -53,6 +65,11 @@ Mint Bookshelf supports **modern MTP Kindles** through libmtp.
 - Verified on **Kindle Scribe** and current 2025 Kindle models.
 - Expected to work with Kindle Scribe, Paperwhite 5/Signature, Kindle 11th generation and newer, Colorsoft, and current 2024–2025 models.
 - **Not supported:** older USB mass-storage Kindles, including Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Kindle device browser" width="85%"><br>
+  <sub>Kindle device browser</sub>
+</div>
 
 > Only one MTP session should be open at a time. Close other MTP tools before using the Kindle tab.
 

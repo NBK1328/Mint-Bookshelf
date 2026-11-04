@@ -28,13 +28,20 @@
 
 ## 功能
 
-| 书库 | Kindle | 文件 |
-| --- | --- | --- |
-| 封面、搜索、详情，并按标题、作者或添加日期排序。 | MTP 文件夹树，上传、下载、移动、复制、重命名和删除。 | Finder 风格的本地浏览器，支持复制、粘贴、拖放和后台操作。 |
+- **书库** — 封面、搜索、详情，并按标题、作者或添加日期排序。
+- **Kindle** — MTP 文件夹树，上传、下载、移动、复制、重命名和删除。
+- **文件** — Finder 风格的本地浏览器，支持复制、粘贴、拖放和后台操作。
+- **转换** — 通过 Calibre 转换，支持进度和取消。
+- **外观** — 深色与浅色主题、六种界面语言和原生 macOS 窗口行为。
+- **体验** — 没有多余操作栏：右键菜单、快捷键，以及清晰的列表与详情分栏。
 
-| 转换 | 外观 | 体验 |
-| --- | --- | --- |
-| 通过 Calibre 转换，支持进度和取消。 | 深色与浅色主题、六种界面语言和原生 macOS 窗口行为。 | 没有多余操作栏：右键菜单、快捷键，以及清晰的列表与详情分栏。 |
+## 截图
+
+<div align="center">
+  <img src="image/Libaray%20light-theme.png" alt="浅色主题下的书库" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="深色主题下的书库" width="49%"><br>
+  <sub>书库 — 浅色与深色主题</sub>
+</div>
 
 ## 主要能力
 
@@ -45,6 +52,11 @@
 - 使用 Calibre 转换图书，并在活动列表中查看任务。
 - 随时切换 **英语、俄语、西班牙语、葡萄牙语、中文和法语**。
 
+<div align="center">
+  <img src="image/Convert.png" alt="通过 Calibre 转换" width="85%"><br>
+  <sub>通过 Calibre 转换</sub>
+</div>
+
 ## 支持的 Kindle
 
 Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
@@ -52,6 +64,11 @@ Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
 - 已在 **Kindle Scribe** 和 2025 年当前型号上验证。
 - 预期支持 Kindle Scribe、Paperwhite 5/Signature、第 11 代及更新 Kindle、Colorsoft 和 2024–2025 型号。
 - **不支持：** 旧款 USB mass storage Kindle，包括 Kindle Paperwhite 2（DP75SDI，2013–2014）。
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="85%"><br>
+  <sub>Kindle 设备浏览</sub>
+</div>
 
 > 同一时间只能打开一个 MTP 会话。使用 Kindle 标签页前，请关闭其他 MTP 工具。
 

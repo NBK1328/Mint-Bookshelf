@@ -28,13 +28,20 @@
 
 ## Fonctions
 
-| Bibliothèque | Kindle | Fichiers |
-| --- | --- | --- |
-| Couvertures, recherche, détails et tri par titre, auteur ou date d’ajout. | Arborescence MTP, envoi, téléchargement, déplacement, copie, renommage et suppression. | Navigateur local façon Finder avec copier, coller, glisser-déposer et opérations en arrière-plan. |
+- **Bibliothèque** — couvertures, recherche, détails et tri par titre, auteur ou date d’ajout.
+- **Kindle** — arborescence MTP, envoi, téléchargement, déplacement, copie, renommage et suppression.
+- **Fichiers** — navigateur local façon Finder avec copier, coller, glisser-déposer et opérations en arrière-plan.
+- **Conversion** — avec Calibre, progression et annulation.
+- **Apparence** — thèmes clair et sombre, six langues d’interface et comportement macOS natif.
+- **Confort** — sans barres d’actions : menus contextuels, raccourcis et une séparation nette entre liste et détails.
 
-| Conversion | Apparence | Confort |
-| --- | --- | --- |
-| Conversion avec Calibre, progression et annulation. | Thèmes clair et sombre, six langues d’interface et comportement macOS natif. | Sans barres d’actions : menus contextuels, raccourcis et une séparation nette entre liste et détails. |
+## Captures
+
+<div align="center">
+  <img src="image/Libaray%20light-theme.png" alt="Bibliothèque en thème clair" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="Bibliothèque en thème sombre" width="49%"><br>
+  <sub>Bibliothèque — thèmes clair et sombre</sub>
+</div>
 
 ## Ce que fait l’application
 
@@ -45,6 +52,11 @@
 - Convertit les livres avec Calibre et suit les tâches dans l’activité.
 - Bascule à tout moment entre **anglais, russe, espagnol, portugais, chinois et français**.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Conversion avec Calibre" width="85%"><br>
+  <sub>Conversion avec Calibre</sub>
+</div>
+
 ## Kindle compatibles
 
 Mint Bookshelf prend en charge les **Kindle modernes en MTP** via libmtp.
@@ -52,6 +64,11 @@ Mint Bookshelf prend en charge les **Kindle modernes en MTP** via libmtp.
 - Vérifié sur **Kindle Scribe** et les modèles actuels de 2025.
 - Compatible avec Kindle Scribe, Paperwhite 5/Signature, Kindle 11e génération et suivants, Colorsoft et les modèles 2024–2025.
 - **Non compatible :** les anciens Kindle en USB mass storage, dont le Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Navigateur Kindle" width="85%"><br>
+  <sub>Navigateur Kindle</sub>
+</div>
 
 > Une seule session MTP doit être ouverte. Fermez les autres outils MTP avant d’utiliser l’onglet Kindle.
 
