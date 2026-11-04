@@ -206,11 +206,61 @@ type fb2Coverpage struct {
 	} `xml:"image"`
 }
 
+type fb2RichText struct {
+	Text string
+}
+
+func (t *fb2RichText) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var b strings.Builder
+	paragraphBreak := func() {
+		if b.Len() == 0 || strings.HasSuffix(b.String(), "\n") {
+			return
+		}
+		b.WriteString("\n\n")
+	}
+	depth := 0
+	for {
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+		switch tok := tok.(type) {
+		case xml.CharData:
+			b.Write(tok)
+		case xml.StartElement:
+			depth++
+			if tok.Name.Local == "p" || tok.Name.Local == "empty-line" {
+				paragraphBreak()
+			}
+		case xml.EndElement:
+			if depth == 0 {
+				t.Text = normalizeFB2Text(b.String())
+				return nil
+			}
+			depth--
+			if tok.Name.Local == "p" {
+				paragraphBreak()
+			}
+		}
+	}
+}
+
+func normalizeFB2Text(text string) string {
+	var paragraphs []string
+	for _, line := range strings.Split(text, "\n") {
+		if line = strings.Join(strings.Fields(line), " "); line != "" {
+			paragraphs = append(paragraphs, line)
+		}
+	}
+	return strings.Join(paragraphs, "\n\n")
+}
+
 type fb2TitleInfo struct {
-	BookTitle string       `xml:"book-title"`
-	Authors   []fb2Author  `xml:"author"`
-	Coverpage fb2Coverpage `xml:"coverpage"`
-	Sequence  struct {
+	BookTitle  string       `xml:"book-title"`
+	Authors    []fb2Author  `xml:"author"`
+	Coverpage  fb2Coverpage `xml:"coverpage"`
+	Annotation fb2RichText  `xml:"annotation"`
+	Sequence   struct {
 		Name   string `xml:"name,attr"`
 		Number string `xml:"number,attr"`
 	} `xml:"sequence"`
@@ -304,6 +354,9 @@ func readFB2Metadata(b *storage.Book) {
 		var index float64
 		fmt.Sscanf(titleInfo.Sequence.Number, "%f", &index)
 		b.SeriesIndex = index
+	}
+	if annotation := strings.TrimSpace(titleInfo.Annotation.Text); annotation != "" {
+		b.Description = annotation
 	}
 	b.Publisher = strings.TrimSpace(f.Desc.PublishInfo.Publisher)
 	fmt.Sscanf(f.Desc.PublishInfo.Year, "%d", &b.Year)

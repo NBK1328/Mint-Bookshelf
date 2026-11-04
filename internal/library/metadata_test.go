@@ -71,6 +71,7 @@ func TestReadFB2Metadata(t *testing.T) {
       <book-title>FB2 Title</book-title>
       <author><first-name>Ivan</first-name><last-name>Petrov</last-name></author>
       <author><nickname>Second</nickname></author>
+      <annotation>Intro <p>First paragraph</p><p>Second <emphasis>part</emphasis>.</p></annotation>
       <sequence name="Series" number="3"/>
     </title-info>
     <publish-info><publisher>Publisher</publisher><year>2024</year></publish-info>
@@ -93,6 +94,9 @@ func TestReadFB2Metadata(t *testing.T) {
 	}
 	if book.Publisher != "Publisher" || book.Year != 2024 || book.ISBN != "9780000000000" {
 		t.Fatalf("publish = %+v", book)
+	}
+	if book.Description != "Intro\n\nFirst paragraph\n\nSecond part." {
+		t.Fatalf("description = %q", book.Description)
 	}
 }
 

@@ -19,6 +19,8 @@ var bookExts = map[string]bool{
 	".pdf": true, ".txt": true, ".html": true, ".htm": true, ".docx": true, ".rtf": true,
 }
 
+const metadataVersion = "1"
+
 type Scanner struct {
 	DB *storage.DB
 }
@@ -62,6 +64,13 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 	if err := s.DB.AddRoot(root); err != nil {
 		return result, err
 	}
+
+	versionKey := "metadata_version:" + root
+	storedVersion, err := s.DB.GetSetting(versionKey)
+	if err != nil {
+		return result, err
+	}
+	refreshMetadata := storedVersion != metadataVersion
 
 	existing, err := s.DB.Books()
 	if err != nil {
@@ -127,7 +136,8 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 		fingerprint := fingerprint(file.size, file.modified)
 
 		if previous, ok := byPath[file.path]; ok {
-			if previous.Size == file.size &&
+			if !refreshMetadata &&
+				previous.Size == file.size &&
 				previous.ModifiedAt.UnixNano() == file.modified.UnixNano() &&
 				previous.Fingerprint == fingerprint &&
 				coverAvailable(previous.CoverPath) {
@@ -159,7 +169,7 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 			previous.Format = strings.TrimPrefix(file.ext, ".")
 			previous.Fingerprint = fingerprint
 			previous.Deleted = false
-			if !coverAvailable(previous.CoverPath) {
+			if refreshMetadata || !coverAvailable(previous.CoverPath) {
 				fillMetadata(&previous)
 				ExtractCovers(&previous)
 			}
@@ -191,6 +201,12 @@ func (s *Scanner) ScanRoot(root string) (ScanResult, error) {
 			return result, err
 		}
 		result.Deleted++
+	}
+
+	if refreshMetadata {
+		if err := s.DB.SetSetting(versionKey, metadataVersion); err != nil {
+			return result, err
+		}
 	}
 
 	slog.Info("scan done", "root", root, "scanned", result.Scanned, "added", result.Added,
