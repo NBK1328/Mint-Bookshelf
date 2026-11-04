@@ -50,16 +50,6 @@
         <sub>Library — dark theme</sub>
       </td>
     </tr>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Device%20Kindle.png" alt="Kindle device browser" width="100%"><br>
-        <sub>Kindle device browser</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Convert.png" alt="Calibre-powered conversion" width="100%"><br>
-        <sub>Calibre-powered conversion</sub>
-      </td>
-    </tr>
   </table>
 </div>
 
@@ -73,6 +63,11 @@
 - Use the local Finder-style browser for drag-and-drop workflows.
 - Switch between **English, Russian, Spanish, Portuguese, Chinese, and French** at any time.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Calibre-powered conversion" width="70%"><br>
+  <sub>Calibre-powered conversion</sub>
+</div>
+
 ## Supported Kindles
 
 Mint Bookshelf supports **modern MTP Kindles** through libmtp.
@@ -80,6 +75,11 @@ Mint Bookshelf supports **modern MTP Kindles** through libmtp.
 - Verified on **Kindle Scribe** and current 2025 Kindle models.
 - Expected to work with Kindle Scribe, Paperwhite 5/Signature, Kindle 11th generation and newer, Colorsoft, and current 2024–2025 models.
 - **Not supported:** older USB mass-storage Kindles, including Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Kindle device browser" width="70%"><br>
+  <sub>Kindle device browser</sub>
+</div>
 
 > Only one MTP session should be open at a time. Close other MTP tools before using the Kindle tab.
 

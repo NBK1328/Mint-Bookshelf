@@ -50,16 +50,6 @@
         <sub>Библиотека — тёмная тема</sub>
       </td>
     </tr>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Device%20Kindle.png" alt="Браузер Kindle" width="100%"><br>
-        <sub>Браузер Kindle</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Convert.png" alt="Конвертация через Calibre" width="100%"><br>
-        <sub>Конвертация через Calibre</sub>
-      </td>
-    </tr>
   </table>
 </div>
 
@@ -72,6 +62,11 @@
 - Конвертирует книги через Calibre и показывает задачи в списке активности.
 - Позволяет переключать **английский, русский, испанский, португальский, китайский и французский** в любое время.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Конвертация через Calibre" width="70%"><br>
+  <sub>Конвертация через Calibre</sub>
+</div>
+
 ## Поддерживаемые Kindle
 
 Приложение работает с **современными MTP-Kindle** через libmtp.
@@ -79,6 +74,11 @@
 - Проверено на **Kindle Scribe** и актуальных моделях 2025 года.
 - Ожидается поддержка Kindle Scribe, Paperwhite 5/Signature, Kindle 11-го поколения и новее, Colorsoft и моделей 2024–2025.
 - **Не поддерживаются:** старые Kindle с USB mass storage, включая Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Браузер Kindle" width="70%"><br>
+  <sub>Браузер Kindle</sub>
+</div>
 
 > Одновременно должен быть открыт только один MTP-сеанс. Закройте другие MTP-программы перед работой с Kindle.
 

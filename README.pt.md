@@ -50,16 +50,6 @@
         <sub>Biblioteca — tema escuro</sub>
       </td>
     </tr>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Device%20Kindle.png" alt="Navegador do Kindle" width="100%"><br>
-        <sub>Navegador do Kindle</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Convert.png" alt="Conversão com Calibre" width="100%"><br>
-        <sub>Conversão com Calibre</sub>
-      </td>
-    </tr>
   </table>
 </div>
 
@@ -72,6 +62,11 @@
 - Converte livros com Calibre e acompanha as tarefas na atividade.
 - Alterna entre **inglês, russo, espanhol, português, chinês e francês** a qualquer momento.
 
+<div align="center">
+  <img src="image/Convert.png" alt="Conversão com Calibre" width="70%"><br>
+  <sub>Conversão com Calibre</sub>
+</div>
+
 ## Kindles compatíveis
 
 O Mint Bookshelf oferece suporte a **Kindles modernos com MTP** via libmtp.
@@ -79,6 +74,11 @@ O Mint Bookshelf oferece suporte a **Kindles modernos com MTP** via libmtp.
 - Verificado no **Kindle Scribe** e em modelos atuais de 2025.
 - Compatível com Kindle Scribe, Paperwhite 5/Signature, Kindle 11ª geração e posteriores, Colorsoft e modelos 2024–2025.
 - **Sem suporte:** Kindles antigos com USB mass storage, incluindo Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Navegador do Kindle" width="70%"><br>
+  <sub>Navegador do Kindle</sub>
+</div>
 
 > Apenas uma sessão MTP deve ficar aberta. Feche outras ferramentas MTP antes de usar a aba Kindle.
 

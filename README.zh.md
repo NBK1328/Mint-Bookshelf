@@ -50,16 +50,6 @@
         <sub>书库 — 深色主题</sub>
       </td>
     </tr>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="100%"><br>
-        <sub>Kindle 设备浏览</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Convert.png" alt="通过 Calibre 转换" width="100%"><br>
-        <sub>通过 Calibre 转换</sub>
-      </td>
-    </tr>
   </table>
 </div>
 
@@ -72,6 +62,11 @@
 - 使用 Calibre 转换图书，并在活动列表中查看任务。
 - 随时切换 **英语、俄语、西班牙语、葡萄牙语、中文和法语**。
 
+<div align="center">
+  <img src="image/Convert.png" alt="通过 Calibre 转换" width="70%"><br>
+  <sub>通过 Calibre 转换</sub>
+</div>
+
 ## 支持的 Kindle
 
 Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
@@ -79,6 +74,11 @@ Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
 - 已在 **Kindle Scribe** 和 2025 年当前型号上验证。
 - 预期支持 Kindle Scribe、Paperwhite 5/Signature、第 11 代及更新 Kindle、Colorsoft 和 2024–2025 型号。
 - **不支持：** 旧款 USB mass storage Kindle，包括 Kindle Paperwhite 2（DP75SDI，2013–2014）。
+
+<div align="center">
+  <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="70%"><br>
+  <sub>Kindle 设备浏览</sub>
+</div>
 
 > 同一时间只能打开一个 MTP 会话。使用 Kindle 标签页前，请关闭其他 MTP 工具。
 
