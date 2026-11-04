@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | Конвертация через Calibre с прогрессом и отменой. | Тёмная и светлая темы, шесть языков интерфейса, нативное поведение macOS. | Без лишних панелей: контекстные меню, сочетания клавиш и чистое разделение на список и описание. |
 
+## Скриншоты
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="Библиотека в светлой теме" width="100%"><br>
+        <sub>Библиотека — светлая тема</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="Библиотека в тёмной теме" width="100%"><br>
+        <sub>Библиотека — тёмная тема</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Браузер Kindle" width="100%"><br>
+        <sub>Браузер Kindle</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="Конвертация через Calibre" width="100%"><br>
+        <sub>Конвертация через Calibre</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Что умеет приложение
 
 - Сканирует только выбранную папку и запоминает её между запусками.

@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | Conversion avec Calibre, progression et annulation. | Thèmes clair et sombre, six langues d’interface et comportement macOS natif. | Sans barres d’actions : menus contextuels, raccourcis et une séparation nette entre liste et détails. |
 
+## Captures
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="Bibliothèque en thème clair" width="100%"><br>
+        <sub>Bibliothèque — thème clair</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="Bibliothèque en thème sombre" width="100%"><br>
+        <sub>Bibliothèque — thème sombre</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Navigateur Kindle" width="100%"><br>
+        <sub>Navigateur Kindle</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="Conversion avec Calibre" width="100%"><br>
+        <sub>Conversion avec Calibre</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Ce que fait l’application
 
 - Analyse uniquement le dossier choisi et le mémorise entre les lancements.

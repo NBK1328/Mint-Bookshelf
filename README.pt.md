@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | Conversão com Calibre, progresso e cancelamento. | Temas claro e escuro, seis idiomas de interface e comportamento nativo do macOS. | Sem barras de ações: menus de contexto, atalhos e uma divisão limpa entre lista e detalhes. |
 
+## Capturas
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="Biblioteca no tema claro" width="100%"><br>
+        <sub>Biblioteca — tema claro</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="Biblioteca no tema escuro" width="100%"><br>
+        <sub>Biblioteca — tema escuro</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Navegador do Kindle" width="100%"><br>
+        <sub>Navegador do Kindle</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="Conversão com Calibre" width="100%"><br>
+        <sub>Conversão com Calibre</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## O que faz
 
 - Analisa apenas a pasta escolhida e lembra dela entre execuções.

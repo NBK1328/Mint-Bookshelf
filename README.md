@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | Calibre-powered conversion with inline activity, progress, and cancellation. | Dark and light themes, six UI languages, native macOS window behavior. | No action bars or noisy panels. Context menus, keyboard shortcuts, and a clean split view. |
 
+## Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="Library in the light theme" width="100%"><br>
+        <sub>Library — light theme</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="Library in the dark theme" width="100%"><br>
+        <sub>Library — dark theme</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Kindle device browser" width="100%"><br>
+        <sub>Kindle device browser</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="Calibre-powered conversion" width="100%"><br>
+        <sub>Calibre-powered conversion</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## What it does
 
 - Library scans only the folder you choose and remembers it between launches.

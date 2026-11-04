@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | 通过 Calibre 转换，支持进度和取消。 | 深色与浅色主题、六种界面语言和原生 macOS 窗口行为。 | 没有多余操作栏：右键菜单、快捷键，以及清晰的列表与详情分栏。 |
 
+## 截图
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="浅色主题下的书库" width="100%"><br>
+        <sub>书库 — 浅色主题</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="深色主题下的书库" width="100%"><br>
+        <sub>书库 — 深色主题</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="100%"><br>
+        <sub>Kindle 设备浏览</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="通过 Calibre 转换" width="100%"><br>
+        <sub>通过 Calibre 转换</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## 主要能力
 
 - 只扫描你选择的文件夹，并在下次启动时记住它。

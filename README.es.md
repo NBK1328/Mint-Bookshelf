@@ -36,6 +36,33 @@
 | --- | --- | --- |
 | Conversión con Calibre, progreso y cancelación. | Temas claro y oscuro, seis idiomas de interfaz y comportamiento nativo de macOS. | Sin barras de acciones: menús contextuales, atajos y una vista limpia de lista y detalles. |
 
+## Capturas
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Libaray%20light-theme.png" alt="Biblioteca en el tema claro" width="100%"><br>
+        <sub>Biblioteca — tema claro</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Libray%20dark-theme.png" alt="Biblioteca en el tema oscuro" width="100%"><br>
+        <sub>Biblioteca — tema oscuro</sub>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" align="center">
+        <img src="image/Device%20Kindle.png" alt="Navegador del Kindle" width="100%"><br>
+        <sub>Navegador del Kindle</sub>
+      </td>
+      <td width="50%" align="center">
+        <img src="image/Convert.png" alt="Conversión con Calibre" width="100%"><br>
+        <sub>Conversión con Calibre</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Qué hace
 
 - Analiza solo la carpeta elegida y la recuerda entre lanzamientos.
