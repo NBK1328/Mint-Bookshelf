@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mint-bookshelf/mint-bookshelf/internal/storage"
+	"golang.org/x/text/encoding/charmap"
 )
 
 func TestParseOPFEPUB3(t *testing.T) {
@@ -92,6 +93,55 @@ func TestReadFB2Metadata(t *testing.T) {
 	}
 	if book.Publisher != "Publisher" || book.Year != 2024 || book.ISBN != "9780000000000" {
 		t.Fatalf("publish = %+v", book)
+	}
+}
+
+func TestReadFB2Cover(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cover.fb2")
+	data := `<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+  <description><title-info><book-title>Covered</book-title><coverpage><image l:href="#cover.jpg"/></coverpage></title-info></description>
+  <binary id="cover.jpg" content-type="image/jpeg">Y292ZXItYnl0ZXM=</binary>
+</FictionBook>`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	book := &storage.Book{Path: path, Format: "fb2"}
+	readFB2Metadata(book)
+	if book.CoverPath == "" {
+		t.Fatal("cover was not extracted")
+	}
+	defer os.Remove(book.CoverPath)
+	if filepath.Ext(book.CoverPath) != ".jpg" {
+		t.Fatalf("cover ext = %q", filepath.Ext(book.CoverPath))
+	}
+	got, err := os.ReadFile(book.CoverPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "cover-bytes" {
+		t.Fatalf("cover bytes = %q", got)
+	}
+}
+
+func TestReadFB2Windows1251(t *testing.T) {
+	xmlText := `<?xml version="1.0" encoding="windows-1251"?><FictionBook><description><title-info><book-title>Тест</book-title><author><first-name>Иван</first-name><last-name>Петров</last-name></author></title-info></description></FictionBook>`
+	encoded, err := charmap.Windows1251.NewEncoder().Bytes([]byte(xmlText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cp1251.fb2")
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	book := &storage.Book{Path: path, Format: "fb2"}
+	readFB2Metadata(book)
+	if book.Title != "Тест" {
+		t.Fatalf("title = %q", book.Title)
+	}
+	if book.Author != "Иван Петров" {
+		t.Fatalf("author = %q", book.Author)
 	}
 }
 

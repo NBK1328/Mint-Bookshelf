@@ -22,3 +22,14 @@ Comments            : Description
 		t.Fatalf("fields = %+v", fields)
 	}
 }
+
+func TestIsPlaceholderAuthor(t *testing.T) {
+	for _, value := range []string{"Unknown", "unknown author", " N/A ", "none"} {
+		if !isPlaceholderAuthor(value) {
+			t.Fatalf("%q should be a placeholder", value)
+		}
+	}
+	if isPlaceholderAuthor("Ivan Petrov") {
+		t.Fatal("real author marked as placeholder")
+	}
+}

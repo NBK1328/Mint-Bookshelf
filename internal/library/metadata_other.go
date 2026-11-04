@@ -27,7 +27,7 @@ func readCalibreMetadata(b *storage.Book) {
 	if value := fields["Title"]; value != "" {
 		b.Title = value
 	}
-	if value := fields["Author(s)"]; value != "" {
+	if value := fields["Author(s)"]; value != "" && !isPlaceholderAuthor(value) {
 		b.Author = value
 	}
 	if value := fields["Publisher"]; value != "" {
@@ -107,4 +107,12 @@ func parseEbookMeta(output string) map[string]string {
 		}
 	}
 	return fields
+}
+
+func isPlaceholderAuthor(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "unknown", "unknown author", "n/a", "none":
+		return true
+	}
+	return false
 }

@@ -244,7 +244,7 @@ func fillMetadata(b *storage.Book) {
 		readEPUBMetadata(b)
 	case "fb2":
 		readFB2Metadata(b)
-	case "pdf", "mobi", "azw", "azw3":
+	case "pdf", "mobi", "azw", "azw3", "html", "htm", "docx", "rtf":
 		readCalibreMetadata(b)
 	}
 }
