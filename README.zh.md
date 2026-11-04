@@ -28,29 +28,19 @@
 
 ## 功能
 
-| 书库 | Kindle | 文件 |
-| --- | --- | --- |
-| 封面、搜索、详情，并按标题、作者或添加日期排序。 | MTP 文件夹树，上传、下载、移动、复制、重命名和删除。 | Finder 风格的本地浏览器，支持复制、粘贴、拖放和后台操作。 |
-
-| 转换 | 外观 | 体验 |
-| --- | --- | --- |
-| 通过 Calibre 转换，支持进度和取消。 | 深色与浅色主题、六种界面语言和原生 macOS 窗口行为。 | 没有多余操作栏：右键菜单、快捷键，以及清晰的列表与详情分栏。 |
+- **书库** — 封面、搜索、详情，并按标题、作者或添加日期排序。
+- **Kindle** — MTP 文件夹树，上传、下载、移动、复制、重命名和删除。
+- **文件** — Finder 风格的本地浏览器，支持复制、粘贴、拖放和后台操作。
+- **转换** — 通过 Calibre 转换，支持进度和取消。
+- **外观** — 深色与浅色主题、六种界面语言和原生 macOS 窗口行为。
+- **体验** — 没有多余操作栏：右键菜单、快捷键，以及清晰的列表与详情分栏。
 
 ## 截图
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Libaray%20light-theme.png" alt="浅色主题下的书库" width="100%"><br>
-        <sub>书库 — 浅色主题</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Libray%20dark-theme.png" alt="深色主题下的书库" width="100%"><br>
-        <sub>书库 — 深色主题</sub>
-      </td>
-    </tr>
-  </table>
+  <img src="image/Libaray%20light-theme.png" alt="浅色主题下的书库" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="深色主题下的书库" width="49%"><br>
+  <sub>书库 — 浅色与深色主题</sub>
 </div>
 
 ## 主要能力
@@ -63,7 +53,7 @@
 - 随时切换 **英语、俄语、西班牙语、葡萄牙语、中文和法语**。
 
 <div align="center">
-  <img src="image/Convert.png" alt="通过 Calibre 转换" width="70%"><br>
+  <img src="image/Convert.png" alt="通过 Calibre 转换" width="85%"><br>
   <sub>通过 Calibre 转换</sub>
 </div>
 
@@ -76,7 +66,7 @@ Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
 - **不支持：** 旧款 USB mass storage Kindle，包括 Kindle Paperwhite 2（DP75SDI，2013–2014）。
 
 <div align="center">
-  <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="70%"><br>
+  <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="85%"><br>
   <sub>Kindle 设备浏览</sub>
 </div>
 

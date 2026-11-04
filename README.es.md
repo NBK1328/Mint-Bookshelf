@@ -28,29 +28,19 @@
 
 ## Funciones
 
-| Biblioteca | Kindle | Archivos |
-| --- | --- | --- |
-| Portadas, búsqueda, detalles y orden por título, autor o fecha de incorporación. | Árbol de carpetas MTP, subida, descarga, movimiento, copia, renombrado y borrado. | Explorador local estilo Finder con copiar, pegar, arrastrar y operaciones en segundo plano. |
-
-| Conversión | Aspecto | Comodidad |
-| --- | --- | --- |
-| Conversión con Calibre, progreso y cancelación. | Temas claro y oscuro, seis idiomas de interfaz y comportamiento nativo de macOS. | Sin barras de acciones: menús contextuales, atajos y una vista limpia de lista y detalles. |
+- **Biblioteca** — portadas, búsqueda, detalles y orden por título, autor o fecha de incorporación.
+- **Kindle** — árbol de carpetas MTP, subida, descarga, movimiento, copia, renombrado y borrado.
+- **Archivos** — explorador local estilo Finder con copiar, pegar, arrastrar y operaciones en segundo plano.
+- **Conversión** — con Calibre, progreso y cancelación.
+- **Aspecto** — temas claro y oscuro, seis idiomas de interfaz y comportamiento nativo de macOS.
+- **Comodidad** — sin barras de acciones: menús contextuales, atajos y una vista limpia de lista y detalles.
 
 ## Capturas
 
 <div align="center">
-  <table>
-    <tr>
-      <td width="50%" align="center">
-        <img src="image/Libaray%20light-theme.png" alt="Biblioteca en el tema claro" width="100%"><br>
-        <sub>Biblioteca — tema claro</sub>
-      </td>
-      <td width="50%" align="center">
-        <img src="image/Libray%20dark-theme.png" alt="Biblioteca en el tema oscuro" width="100%"><br>
-        <sub>Biblioteca — tema oscuro</sub>
-      </td>
-    </tr>
-  </table>
+  <img src="image/Libaray%20light-theme.png" alt="Biblioteca en el tema claro" width="49%">
+  <img src="image/Libray%20dark-theme.png" alt="Biblioteca en el tema oscuro" width="49%"><br>
+  <sub>Biblioteca — temas claro y oscuro</sub>
 </div>
 
 ## Qué hace
@@ -63,7 +53,7 @@
 - Cambia entre **inglés, ruso, español, portugués, chino y francés** en cualquier momento.
 
 <div align="center">
-  <img src="image/Convert.png" alt="Conversión con Calibre" width="70%"><br>
+  <img src="image/Convert.png" alt="Conversión con Calibre" width="85%"><br>
   <sub>Conversión con Calibre</sub>
 </div>
 
@@ -76,7 +66,7 @@ Mint Bookshelf usa **Kindle modernos con MTP** mediante libmtp.
 - **No compatible:** Kindle antiguos con USB mass storage, incluido Kindle Paperwhite 2 (DP75SDI, 2013–2014).
 
 <div align="center">
-  <img src="image/Device%20Kindle.png" alt="Navegador del Kindle" width="70%"><br>
+  <img src="image/Device%20Kindle.png" alt="Navegador del Kindle" width="85%"><br>
   <sub>Navegador del Kindle</sub>
 </div>
 
