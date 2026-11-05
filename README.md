@@ -60,11 +60,12 @@
 
 ## Supported Kindles
 
-Mint Bookshelf supports **modern MTP Kindles** through libmtp.
+Mint Bookshelf supports **modern MTP Kindles** through libmtp, plus **older USB
+mass-storage Kindles** that macOS mounts as a drive.
 
 - Verified on **Kindle Scribe** and current 2025 Kindle models.
 - Expected to work with Kindle Scribe, Paperwhite 5/Signature, Kindle 11th generation and newer, Colorsoft, and current 2024–2025 models.
-- **Not supported:** older USB mass-storage Kindles, including Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+- USB mass-storage Kindles (including **Kindle Oasis 10th generation**, Kindle Paperwhite 2 / DP75SDI and other pre-2024 models) appear in the Kindle tab automatically when macOS mounts them as a volume.
 
 <div align="center">
   <img src="image/Device%20Kindle.png" alt="Kindle device browser" width="85%"><br>
@@ -137,7 +138,7 @@ All UI strings, statuses, counts, and errors use the shared `L10n` API.
 
 ## Notes
 
-- Only modern MTP Kindles are supported; USB mass-storage Kindles are not.
+- Modern MTP Kindles use libmtp; older USB mass-storage Kindles are browsed through their mounted volume.
 - Multiple Amazon devices can be selected; discovery and reconnect are polled.
 - Device deletion is permanent and requires confirmation.
 - The app keeps one MTP session open for its lifetime.

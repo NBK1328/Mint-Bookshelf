@@ -59,11 +59,12 @@
 
 ## Kindles compatíveis
 
-O Mint Bookshelf oferece suporte a **Kindles modernos com MTP** via libmtp.
+O Mint Bookshelf oferece suporte a **Kindles modernos com MTP** via libmtp, além
+de **Kindles antigos com USB mass storage** que o macOS monta como unidade.
 
 - Verificado no **Kindle Scribe** e em modelos atuais de 2025.
 - Compatível com Kindle Scribe, Paperwhite 5/Signature, Kindle 11ª geração e posteriores, Colorsoft e modelos 2024–2025.
-- **Sem suporte:** Kindles antigos com USB mass storage, incluindo Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+- Kindles com USB mass storage (incluindo **Kindle Oasis de 10ª geração**, Kindle Paperwhite 2 / DP75SDI e outros modelos anteriores a 2024) aparecem automaticamente na aba Kindle quando o macOS os monta como volume.
 
 <div align="center">
   <img src="image/Device%20Kindle.png" alt="Navegador do Kindle" width="85%"><br>
@@ -136,7 +137,7 @@ Todas as strings, status, contadores e erros usam a API comum `L10n`.
 
 ## Observações
 
-- Apenas Kindles modernos com MTP são suportados; USB mass storage não é.
+- Kindles modernos com MTP usam libmtp; Kindles antigos com USB mass storage são navegados pelo volume montado.
 - Vários dispositivos Amazon podem ser selecionados; descoberta e reconexão são periódicas.
 - A exclusão no dispositivo é permanente e exige confirmação.
 - O app mantém uma sessão MTP aberta durante toda a execução.
