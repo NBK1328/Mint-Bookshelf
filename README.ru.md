@@ -59,11 +59,12 @@
 
 ## Поддерживаемые Kindle
 
-Приложение работает с **современными MTP-Kindle** через libmtp.
+Приложение работает с **современными MTP-Kindle** через libmtp, а также со
+**старыми Kindle с USB mass storage**, которые macOS монтирует как диск.
 
 - Проверено на **Kindle Scribe** и актуальных моделях 2025 года.
 - Ожидается поддержка Kindle Scribe, Paperwhite 5/Signature, Kindle 11-го поколения и новее, Colorsoft и моделей 2024–2025.
-- **Не поддерживаются:** старые Kindle с USB mass storage, включая Kindle Paperwhite 2 (DP75SDI, 2013–2014).
+- Kindle с USB mass storage (включая **Kindle Oasis 10-го поколения**, Kindle Paperwhite 2 / DP75SDI и другие модели до 2024 года) автоматически появляются во вкладке Kindle, когда macOS монтирует их как том.
 
 <div align="center">
   <img src="image/Device%20Kindle.png" alt="Браузер Kindle" width="85%"><br>
@@ -136,7 +137,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-pa
 
 ## Примечания
 
-- Поддерживаются только современные MTP-Kindle; USB mass storage не поддерживается.
+- Современные MTP-Kindle работают через libmtp; старые Kindle с USB mass storage открываются через смонтированный том.
 - Можно выбирать несколько устройств Amazon; обнаружение и переподключение опрашиваются.
 - Удаление с устройства необратимо и требует подтверждения.
 - Приложение держит один MTP-сеанс на всё время работы.

@@ -1426,7 +1426,19 @@ struct DevicesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if store.devices.isEmpty && !store.deviceLoading {
+            if store.devices.isEmpty && store.legacyKindleVolume != nil {
+                if let volume = store.legacyKindleVolume {
+                    legacyDeviceHeader(volume)
+                    Divider()
+                    FilesView(
+                        store: store,
+                        initialURL: volume,
+                        showsSidebar: false,
+                        hideKindleActions: true
+                    )
+                    .id(volume.path)
+                }
+            } else if store.devices.isEmpty && !store.deviceLoading {
                 ContentUnavailableView {
                     Label(t("No Kindle Connected"), systemImage: "cable.connector")
                 } description: {
@@ -1533,6 +1545,26 @@ struct DevicesView: View {
 
     private var deviceName: String {
         store.devices.first(where: { $0.id == store.selectedDeviceKey })?.product ?? "Kindle"
+    }
+
+    private func legacyDeviceHeader(_ volume: URL) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "externaldrive")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(volume.lastPathComponent)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                Text(t("USB storage mode"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var deviceHeader: some View {
@@ -2097,6 +2129,8 @@ struct DeviceFolderPicker: View {
 
 struct FilesView: View {
     @ObservedObject var store: AppStore
+    private let showsSidebar: Bool
+    private let hideKindleActions: Bool
 
     @State private var currentURL = FileManager.default.homeDirectoryForCurrentUser
     @State private var entries: [LocalEntry] = []
@@ -2128,6 +2162,13 @@ struct FilesView: View {
 
     @State private var newFolderName = ""
     @State private var showNewFolder = false
+
+    init(store: AppStore, initialURL: URL? = nil, showsSidebar: Bool = true, hideKindleActions: Bool = false) {
+        _store = ObservedObject(wrappedValue: store)
+        self.showsSidebar = showsSidebar
+        self.hideKindleActions = hideKindleActions
+        _currentURL = State(initialValue: initialURL ?? FileManager.default.homeDirectoryForCurrentUser)
+    }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         store.t(key, arguments)
@@ -2170,8 +2211,10 @@ struct FilesView: View {
 
     var body: some View {
         HSplitView {
-            sidebar
-                .frame(idealWidth: 185, maxWidth: 240)
+            if showsSidebar {
+                sidebar
+                    .frame(idealWidth: 185, maxWidth: 240)
+            }
 
             VStack(spacing: 0) {
                 navigationBar
@@ -2186,7 +2229,11 @@ struct FilesView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data]) { result in
             guard case .success(let url) = result else { return }
             let ok = url.startAccessingSecurityScopedResource()
-            beginUploadToKindle([url], move: false)
+            if hideKindleActions {
+                importExternal([url])
+            } else {
+                beginUploadToKindle([url], move: false)
+            }
             if ok { url.stopAccessingSecurityScopedResource() }
         }
         .sheet(isPresented: $showKindlePicker) {
@@ -2411,7 +2458,7 @@ struct FilesView: View {
                 Button(t("Duplicate")) { duplicate(urls) }
             }
             Divider()
-            if !chosen.isEmpty {
+            if !chosen.isEmpty && !hideKindleActions {
                 let items = chosen.map(\.url)
                 Button(t("Upload to Kindle…")) {
                     beginUploadToKindle(items, move: false)

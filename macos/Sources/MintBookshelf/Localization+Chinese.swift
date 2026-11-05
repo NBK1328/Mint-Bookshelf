@@ -84,6 +84,8 @@ extension L10n {
         "Kindle connected · %d objects": "Kindle 已连接 · %d 个对象",
         "Kindle connected, listing failed: %@": "Kindle 已连接，列出失败：%@",
         "Kindle disconnected": "Kindle 已断开",
+        "Kindle mounted as USB storage": "Kindle 已挂载为 USB 存储设备",
+        "USB storage mode": "USB 存储模式",
         "Language": "语言",
         "Language of book": "图书语言",
         "Library": "书库",

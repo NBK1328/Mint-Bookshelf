@@ -25,6 +25,7 @@ class AppStore: ObservableObject {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: "appTheme") }
     }
     @Published var devices: [RawDevice] = []
+    @Published var legacyKindleVolume: URL?
     @Published var deviceFiles: [DeviceFile] = []
     @Published var section: String = "library"
     @Published var convertInput: String = ""
@@ -279,6 +280,10 @@ class AppStore: ObservableObject {
         deviceState = "discovering"
         Task {
             let loaded = await runOnDeviceQueue { loadDevicesResult() }
+            let legacy = await Task.detached(priority: .utility) {
+                AppStore.findLegacyKindleVolume()
+            }.value
+            legacyKindleVolume = legacy
             if let error = loaded.error {
                 devices = []
                 deviceFiles = []
@@ -300,8 +305,13 @@ class AppStore: ObservableObject {
 
             guard let device = selected else {
                 deviceFiles = []
-                deviceStatus = t("No Kindle connected")
-                deviceState = "disconnected"
+                if legacy != nil {
+                    deviceStatus = t("Kindle mounted as USB storage")
+                    deviceState = "legacy"
+                } else {
+                    deviceStatus = t("No Kindle connected")
+                    deviceState = "disconnected"
+                }
                 deviceLoading = false
                 refreshInFlight = false
                 return
@@ -332,6 +342,37 @@ class AppStore: ObservableObject {
             return (files, L10n.text("Kindle connected, listing failed: %@", language, L10n.error(error, language)))
         }
         return (files, L10n.text("Kindle connected · %d objects", language, files.count))
+    }
+
+    nonisolated private static func findLegacyKindleVolume() -> URL? {
+        let fm = FileManager.default
+        let volumes = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        guard let urls = try? fm.contentsOfDirectory(
+            at: volumes,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        for url in urls {
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values?.isDirectory == true, values?.isSymbolicLink != true else { continue }
+            let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+            guard resolved.path != "/" else { continue }
+            if looksLikeKindleVolume(resolved) {
+                return resolved
+            }
+        }
+        return nil
+    }
+
+    nonisolated private static func looksLikeKindleVolume(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.appendingPathComponent("system/version.txt").path) {
+            return true
+        }
+        let name = url.lastPathComponent.lowercased()
+        return name == "kindle"
+            && fm.fileExists(atPath: url.appendingPathComponent("documents", isDirectory: true).path)
     }
 
     func reloadDeviceFiles() async {

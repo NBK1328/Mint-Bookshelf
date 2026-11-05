@@ -84,6 +84,8 @@ extension L10n {
         "Kindle connected · %d objects": "Kindle conectado · %d objetos",
         "Kindle connected, listing failed: %@": "Kindle conectado, error al listar: %@",
         "Kindle disconnected": "Kindle desconectado",
+        "Kindle mounted as USB storage": "Kindle montado como almacenamiento USB",
+        "USB storage mode": "Modo almacenamiento USB",
         "Language": "Idioma",
         "Language of book": "Idioma del libro",
         "Library": "Biblioteca",

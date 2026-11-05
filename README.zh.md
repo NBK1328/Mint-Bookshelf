@@ -59,11 +59,12 @@
 
 ## 支持的 Kindle
 
-Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**。
+Mint Bookshelf 通过 libmtp 支持 **现代 MTP Kindle**，并支持 macOS 挂载为磁盘的
+**旧款 USB mass storage Kindle**。
 
 - 已在 **Kindle Scribe** 和 2025 年当前型号上验证。
 - 预期支持 Kindle Scribe、Paperwhite 5/Signature、第 11 代及更新 Kindle、Colorsoft 和 2024–2025 型号。
-- **不支持：** 旧款 USB mass storage Kindle，包括 Kindle Paperwhite 2（DP75SDI，2013–2014）。
+- USB mass storage Kindle（包括 **Kindle Oasis 第 10 代**、Kindle Paperwhite 2 / DP75SDI 及其他 2024 年之前的型号）在 macOS 将其挂载为宗卷后会自动显示在 Kindle 标签页中。
 
 <div align="center">
   <img src="image/Device%20Kindle.png" alt="Kindle 设备浏览" width="85%"><br>
@@ -136,7 +137,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-pa
 
 ## 说明
 
-- 仅支持现代 MTP Kindle；不支持 USB mass storage Kindle。
+- 现代 MTP Kindle 通过 libmtp 访问；旧款 USB mass storage Kindle 通过挂载的宗卷浏览。
 - 可选择多个 Amazon 设备；会定期检测和重新连接。
 - 设备上的删除不可恢复，并需要确认。
 - 应用在整个运行期间保持一个 MTP 会话。
